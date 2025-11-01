@@ -1,0 +1,20 @@
+# Dependencies / build
+node_modules/
+.next/
+dist/
+build/
+out/
+coverage/
+.turbo/
+.vercel/
+# Logs & OS junk
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+.DS_Store
+# Env
+.env
+.env.*
+!.env.example
