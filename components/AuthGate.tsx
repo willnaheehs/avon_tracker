@@ -1,26 +1,39 @@
 "use client";
-import { ReactNode, useEffect, useState } from "react";
+
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import supabase from "@/lib/supabaseClient";
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
-  const [ready, setReady] = useState(false);
-  const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const router = useRouter();
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    async function check() {
+    let mounted = true;
+
+    async function init() {
       const { data } = await supabase.auth.getSession();
-      const isSignedIn = !!data.session;
-      setSignedIn(isSignedIn);
+      if (!mounted) return;
+
+      if (!data.session) {
+        router.replace("/login");
+        return;
+      }
       setReady(true);
-      if (!isSignedIn) router.replace("/login"); // <-- send to public login
     }
-    check();
-    const { data: sub } = supabase.auth.onAuthStateChange(() => check());
-    return () => sub.subscription.unsubscribe();
+
+    init();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) router.replace("/login");
+    });
+
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
   }, [router]);
 
-  if (!ready || !signedIn) return null;
+  if (!ready) return null;
   return <>{children}</>;
 }

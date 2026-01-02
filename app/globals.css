@@ -1,3 +1,14 @@
-/* @tailwind base;
-@tailwind components;
-@tailwind utilities; */
+@import "tailwindcss";
+
+/* your custom CSS is fine below */
+:root {
+  --bg: 248 250 252;
+  --text: 15 23 42;
+}
+
+html, body { height: 100%; }
+
+body {
+  background: rgb(var(--bg));
+  color: rgb(var(--text));
+}
