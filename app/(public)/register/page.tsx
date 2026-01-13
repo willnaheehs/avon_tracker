@@ -74,98 +74,149 @@ export default function RegisterPage() {
 
 
   return (
-    <main className="mx-auto max-w-lg p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">Create your account</h1>
-
-      <div className="flex gap-2">
-        <button
-          className={`rounded px-3 py-1.5 border ${tab === "coach" ? "bg-black text-white" : ""}`}
-          onClick={() => setTab("coach")}
-        >
-          Coach
-        </button>
-        <button
-          className={`rounded px-3 py-1.5 border ${tab === "player" ? "bg-black text-white" : ""}`}
-          onClick={() => setTab("player")}
-        >
-          Player
-        </button>
+    <div className="min-h-screen w-screen bg-[#9DCFF5] flex flex-col overflow-y-auto">
+      <div className="flex justify-center pt-8 pb-6">
+        <img
+          src="/2way-logo.png"
+          alt="2W Lacrosse Logo"
+          className="w-72 h-72 rounded-full object-cover"
+        />
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-4">
-        <input
-          className="w-full rounded border p-2"
-          type="email"
-          placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <input
-          className="w-full rounded border p-2"
-          type="password"
-          placeholder="Create a password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
+      <div className="flex-1 flex items-center justify-center px-4 py-8">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
+          <h1 className="text-3xl font-bold text-center mb-2 text-gray-900">Create Account</h1>
+          <p className="text-center text-gray-600 mb-6">Join your recruiting log</p>
 
-        {tab === "coach" ? (
-          <>
-            <input
-              className="w-full rounded border p-2"
-              placeholder="Your name"
-              value={coachName}
-              onChange={(e) => setCoachName(e.target.value)}
-              required
-            />
-            <input
-              className="w-full rounded border p-2"
-              placeholder="Team name"
-              value={teamName}
-              onChange={(e) => setTeamName(e.target.value)}
-              required
-            />
-          </>
-        ) : (
-          <>
-            <input
-              className="w-full rounded border p-2"
-              placeholder="Your name"
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              required
-            />
-            <input
-              className="w-full rounded border p-2"
-              type="number"
-              placeholder="Grad year (e.g., 2027)"
-              value={gradYear}
-              onChange={(e) => setGradYear(e.target.value === "" ? "" : Number(e.target.value))}
-              required
-            />
-            <input
-              className="w-full rounded border p-2"
-              placeholder="Coach invite code"
-              value={coachCode}
-              onChange={(e) => setCoachCode(e.target.value)}
-              required
-            />
-          </>
-        )}
+          <div className="flex gap-2 mb-6">
+            <button
+              className={`flex-1 rounded-lg px-4 py-2.5 font-medium transition-all ${
+                tab === "coach"
+                  ? "bg-black text-white shadow-md"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+              onClick={() => setTab("coach")}
+            >
+              Coach
+            </button>
+            <button
+              className={`flex-1 rounded-lg px-4 py-2.5 font-medium transition-all ${
+                tab === "player"
+                  ? "bg-black text-white shadow-md"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+              onClick={() => setTab("player")}
+            >
+              Player
+            </button>
+          </div>
 
-        {err && <div className="text-sm text-red-600">{err}</div>}
-        <button
-          className="w-full rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-          disabled={busy}
-        >
-          {busy ? "Creating account…" : "Create account"}
-        </button>
-      </form>
+          <form onSubmit={onSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+              <input
+                className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
 
-      <p className="text-sm">
-        Already have an account? <a className="underline" href="/login">Log in</a>
-      </p>
-    </main>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+              <input
+                className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                type="password"
+                placeholder="Create a password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            {tab === "coach" ? (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                    placeholder="Your full name"
+                    value={coachName}
+                    onChange={(e) => setCoachName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Team Name</label>
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                    placeholder="Team name"
+                    value={teamName}
+                    onChange={(e) => setTeamName(e.target.value)}
+                    required
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                    placeholder="Your full name"
+                    value={playerName}
+                    onChange={(e) => setPlayerName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Graduation Year</label>
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                    type="number"
+                    placeholder="e.g., 2027"
+                    value={gradYear}
+                    onChange={(e) => setGradYear(e.target.value === "" ? "" : Number(e.target.value))}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Coach Invite Code</label>
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                    placeholder="Enter invite code"
+                    value={coachCode}
+                    onChange={(e) => setCoachCode(e.target.value)}
+                    required
+                  />
+                </div>
+              </>
+            )}
+
+            {err && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                {err}
+              </div>
+            )}
+
+            <button
+              className="w-full rounded-lg bg-black px-4 py-3 text-white font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg hover:shadow-xl"
+              disabled={busy}
+            >
+              {busy ? "Creating account..." : "Create account"}
+            </button>
+          </form>
+
+          <p className="text-center text-sm text-gray-600 mt-6">
+            Already have an account?{" "}
+            <a className="text-black font-medium hover:underline" href="/login">
+              Sign in
+            </a>
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }

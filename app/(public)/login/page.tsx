@@ -50,37 +50,70 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto max-w-md p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">Log in</h1>
-      <form onSubmit={onSubmit} className="space-y-4">
-        <input
-          className="w-full rounded border p-2"
-          type="email"
-          placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
+    <div className="h-screen w-screen bg-[#9DCFF5] flex flex-col overflow-hidden">
+      <div className="flex justify-center pt-8 pb-6">
+        <img
+          src="/2way-logo.png"
+          alt="2W Lacrosse Logo"
+          className="w-72 h-72 rounded-full object-cover"
         />
-        <input
-          className="w-full rounded border p-2"
-          type="password"
-          placeholder="••••••••"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        {err && <div className="text-sm text-red-600">{err}</div>}
-        <button
-          className="w-full rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-          disabled={busy}
-        >
-          {busy ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
+      </div>
 
-      <p className="text-sm">
-        No account? <a className="underline" href="/register">Create one</a>
-      </p>
-    </main>
+      <div className="flex-1 flex items-center justify-center px-4 pb-32">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
+          <h1 className="text-3xl font-bold text-center mb-2 text-gray-900">Welcome</h1>
+          <p className="text-center text-gray-600 mb-8">Sign in to your recruiting log</p>
+
+          <form onSubmit={onSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+              <input
+                className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#9DCFF5] focus:border-transparent transition"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+              <input
+                className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#9DCFF5] focus:border-transparent transition"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            {err && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                {err}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="w-full rounded-lg bg-black text-white px-4 py-3 font-semibold hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-lg"
+              disabled={busy}
+            >
+              {busy ? "Signing in…" : "Sign In"}
+            </button>
+          </form>
+
+          <div className="mt-6 text-center">
+            <p className="text-gray-600">
+              Don't have an account?{" "}
+              <a href="/register" className="text-[#9DCFF5] hover:text-[#7ab8e0] font-semibold underline">
+                Create one
+              </a>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

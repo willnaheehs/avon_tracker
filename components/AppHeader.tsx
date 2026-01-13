@@ -44,11 +44,11 @@ async function logout() {
   if (loading) return null;
 
   return (
-    <header className="flex items-center justify-between gap-4 rounded-xl border bg-white px-4 py-3 shadow-sm">
-      <div className="flex items-center gap-3">
-        <div className="text-lg font-semibold">Avon Tracker</div>
+    <header className="flex items-center justify-between gap-4 bg-black px-8 py-5 border-b-4 border-black">
+      <div className="flex items-center gap-4">
+        <div className="text-2xl font-black text-white">MY RECRUITING PROFILE</div>
         {teamName && (
-          <span className="rounded-full border px-2 py-0.5 text-xs font-medium">
+          <span className="border-2 border-white bg-[#9DCFF5] px-4 py-1.5 text-sm font-bold text-black rounded-lg">
             {teamName}
           </span>
         )}
@@ -58,30 +58,38 @@ async function logout() {
         {profile ? (
           <>
             <div className="text-right">
-              <div className="text-sm font-medium">{profile.name ?? "Unnamed"}</div>
-              <div className="text-xs text-slate-500">
-                {profile.role === "coach"
-                  ? "Coach"
-                  : profile.role === "player"
-                  ? "Player"
-                  : profile.role}
+              <div className="text-sm font-bold text-white">{profile.name ?? "Unnamed"}</div>
+              <div className="text-xs text-gray-300 flex items-center gap-1.5 justify-end font-medium">
+                <span>
+                  {profile.role === "coach"
+                    ? "Coach"
+                    : profile.role === "player"
+                    ? "Player"
+                    : profile.role}
+                </span>
+                {teamName && profile.role === "player" && (
+                  <>
+                    <span>•</span>
+                    <span className="font-bold">{teamName}</span>
+                  </>
+                )}
               </div>
             </div>
 
             <button
               onClick={logout}
               disabled={busy}
-              className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
+              className="rounded-lg bg-white px-5 py-2.5 text-sm text-black font-bold hover:bg-gray-200 disabled:opacity-50 transition-all border-2 border-white"
             >
-              {busy ? "Logging out…" : "Log out"}
+              {busy ? "Logging out..." : "Log Out"}
             </button>
           </>
         ) : (
           <button
             onClick={() => router.push("/login")}
-            className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
+            className="rounded-lg bg-white px-5 py-2.5 text-sm text-black font-bold hover:bg-gray-200 transition-all border-2 border-white"
           >
-            Log in
+            Log In
           </button>
         )}
       </div>
