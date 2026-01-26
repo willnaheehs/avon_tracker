@@ -16,62 +16,59 @@ export default function RegisterPage() {
 
   // coach fields
   const [coachName, setCoachName] = useState("");
-  const [teamName, setTeamName] = useState("");
+  const [teamName, setTeamName] = useState(""); // optional label; can keep or remove later
 
   // player fields
   const [playerName, setPlayerName] = useState("");
   const [gradYear, setGradYear] = useState<number | "">("");
-  const [coachCode, setCoachCode] = useState("");
+  const [teamCode, setTeamCode] = useState(""); // rename in state for clarity
 
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function afterAuthRpc() {
-    // Call the appropriate RPC to create the profile row
     if (tab === "coach") {
       const { error } = await supabase.rpc("register_coach", {
         p_name: coachName,
-        p_team: teamName,
+        p_team: teamName, // ok even if you later make it optional in SQL
       });
       if (error) throw error;
     } else {
       const { error } = await supabase.rpc("register_player", {
         p_name: playerName,
         p_grad_year: gradYear === "" ? null : Number(gradYear),
-        p_coach_code: coachCode,
+        p_team_code: teamCode, // THIS must match your new SQL function signature
       });
       if (error) throw error;
     }
   }
 
   async function onSubmit(e: React.FormEvent) {
-  e.preventDefault();
-  setErr(null);
-  setBusy(true);
+    e.preventDefault();
+    setErr(null);
+    setBusy(true);
 
-  try {
-    // 1) sign up
-    const { error: signUpErr } = await supabase.auth.signUp({ email, password });
-    if (signUpErr) throw signUpErr;
+    try {
+      // 1) sign up
+      const { error: signUpErr } = await supabase.auth.signUp({ email, password });
+      if (signUpErr) throw signUpErr;
 
-    // 2) sign in (guarantees session exists)
-    const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
-    if (signInErr) throw signInErr;
+      // 2) sign in (ensures session exists for auth.uid() inside RPC)
+      const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInErr) throw signInErr;
 
-    // 3) create profile (THIS is what you’re missing)
-    await afterAuthRpc();
+      // 3) create profile row via RPC
+      await afterAuthRpc();
 
-    // 4) go to app
-    router.replace("/interactions");
-  } catch (e: any) {
-    setErr(e?.message ?? "Registration failed");
-    // optional: sign out if profile creation failed mid-way
-    await supabase.auth.signOut();
-  } finally {
-    setBusy(false);
+      // 4) go to app
+      router.replace("/interactions");
+    } catch (e: any) {
+      setErr(e?.message ?? "Registration failed");
+      await supabase.auth.signOut();
+    } finally {
+      setBusy(false);
+    }
   }
-}
-
 
   return (
     <div className="min-h-screen w-screen bg-[#9DCFF5] flex flex-col overflow-y-auto">
@@ -90,6 +87,7 @@ export default function RegisterPage() {
 
           <div className="flex gap-2 mb-6">
             <button
+              type="button"
               className={`flex-1 rounded-lg px-4 py-2.5 font-medium transition-all ${
                 tab === "coach"
                   ? "bg-black text-white shadow-md"
@@ -100,6 +98,7 @@ export default function RegisterPage() {
               Coach
             </button>
             <button
+              type="button"
               className={`flex-1 rounded-lg px-4 py-2.5 font-medium transition-all ${
                 tab === "player"
                   ? "bg-black text-white shadow-md"
@@ -148,14 +147,15 @@ export default function RegisterPage() {
                     required
                   />
                 </div>
+
+                {/* You can make this optional if you want */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Team Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Team Label (optional)</label>
                   <input
                     className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
-                    placeholder="Team name"
+                    placeholder="e.g., My Program"
                     value={teamName}
                     onChange={(e) => setTeamName(e.target.value)}
-                    required
                   />
                 </div>
               </>
@@ -171,6 +171,7 @@ export default function RegisterPage() {
                     required
                   />
                 </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Graduation Year</label>
                   <input
@@ -182,13 +183,14 @@ export default function RegisterPage() {
                     required
                   />
                 </div>
+
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Coach Invite Code</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Team Invite Code</label>
                   <input
                     className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
-                    placeholder="Enter invite code"
-                    value={coachCode}
-                    onChange={(e) => setCoachCode(e.target.value)}
+                    placeholder="Enter team invite code"
+                    value={teamCode}
+                    onChange={(e) => setTeamCode(e.target.value)}
                     required
                   />
                 </div>

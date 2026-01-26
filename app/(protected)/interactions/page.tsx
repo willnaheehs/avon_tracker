@@ -24,10 +24,26 @@ type RosterRow = {
   coach_user_id: string | null;
 };
 
+
 export default function InteractionsPage() {
   const { loading, profile } = useProfile();
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  async function deleteInteraction(id: string) {
+    if (!window.confirm("Delete this log? This cannot be undone.")) return;
+
+    setError(null);
+
+    const { error } = await supabase.from("interactions").delete().eq("id", id);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
+    // remove from UI immediately
+    setRows((prev) => prev.filter((x) => x.id !== id));
+  }
 
   useEffect(() => {
     async function load() {
@@ -155,15 +171,32 @@ export default function InteractionsPage() {
           {rows.map((r) => (
             <div key={r.id} className="bg-white rounded-xl shadow-md overflow-hidden">
               <div className="bg-black text-white px-6 py-4">
-                <div className="flex items-center justify-between">
-                  <div className="font-bold text-xl">
-                    {r.type ?? "(unknown)"}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-bold text-xl truncate">{r.type ?? "(unknown)"}</div>
+                    <span className="text-sm font-medium">
+                      {new Date(r.occurred_on).toLocaleDateString()}
+                    </span>
                   </div>
-                  <span className="text-sm font-medium">
-                    {new Date(r.occurred_on).toLocaleDateString()}
-                  </span>
+
+                  <div className="flex gap-2 shrink-0">
+                    <Link
+                      href={`/interactions/${r.id}/edit`}
+                      className="px-3 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-all"
+                    >
+                      Edit
+                    </Link>
+
+                    <button
+                      onClick={() => deleteInteraction(r.id)}
+                      className="px-3 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-all"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
+
 
               <div className="p-6 space-y-4">
                 {isCoach && (

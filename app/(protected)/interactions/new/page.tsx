@@ -72,7 +72,7 @@ export default function NewInteractionPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-[#9DCFF5] to-[#7ab8e8] p-6">
+    <main className="min-h-screen bg-linear-to-b from-[#9DCFF5] to-[#7ab8e8] p-6">
       <div className="max-w-3xl mx-auto space-y-6">
         <div className="bg-white rounded-xl shadow-lg p-6">
           <h1 className="text-3xl font-bold text-gray-900">Log Interaction</h1>
