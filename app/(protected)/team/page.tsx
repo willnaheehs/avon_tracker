@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import supabase from "@/lib/supabaseClient";
 import { useProfile } from "@/components/useProfile";
 import Link from "next/link";
@@ -38,6 +38,12 @@ type RosterRow = {
 
     // copy feedback
     const [copiedCodeForTeamId, setCopiedCodeForTeamId] = useState<string | null>(null);
+
+    // dropdown menu
+    const [openMenuTeamId, setOpenMenuTeamId] = useState<string | null>(null);
+    const [openMenuPlayerId, setOpenMenuPlayerId] = useState<string | null>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+    const playerMenuRef = useRef<HTMLDivElement>(null);
 
     async function removePlayer(playerId: string) {
       if (!profile) return;
@@ -135,6 +141,23 @@ type RosterRow = {
     loadTeamsAndRoster();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, profile?.user_id]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpenMenuTeamId(null);
+      }
+      if (playerMenuRef.current && !playerMenuRef.current.contains(event.target as Node)) {
+        setOpenMenuPlayerId(null);
+      }
+    }
+
+    if (openMenuTeamId || openMenuPlayerId) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [openMenuTeamId, openMenuPlayerId]);
 
   const rosterGrouped = useMemo(() => {
     // group roster by team_id (and keep an "Unassigned" bucket just in case)
@@ -297,75 +320,96 @@ type RosterRow = {
                   No teams yet. Create one above, then share its invite code.
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-2">
                   {teams.map((t) => (
-                    <div key={t.id} className="border-2 border-gray-100 rounded-lg p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          {editingTeamId === t.id ? (
-                            <div className="space-y-3">
-                              <input
-                                value={editingName}
-                                onChange={(e) => setEditingName(e.target.value)}
-                                className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
-                              />
-                              <div className="flex gap-3">
-                                <button
-                                  onClick={() => saveEditTeam(t.id)}
-                                  disabled={savingEdit}
-                                  className="px-5 py-2 bg-black text-white font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-all shadow-md"
-                                >
-                                  {savingEdit ? "Saving..." : "Save"}
-                                </button>
-                                <button
-                                  onClick={cancelEditTeam}
-                                  disabled={savingEdit}
-                                  className="px-5 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-all font-medium"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="text-xl font-semibold text-gray-900">{t.name}</div>
-                              <div className="text-sm text-gray-600 mt-1">
-                                Invite Code:{" "}
-                                <span className="font-mono font-bold text-gray-900">
-                                  {t.invite_code}
-                                </span>
-                              </div>
-                            </>
-                          )}
-                        </div>
-
-                        {editingTeamId !== t.id && (
-                          <div className="flex flex-col gap-2">
+                    <div key={t.id}>
+                      {editingTeamId === t.id ? (
+                        <div className="border border-gray-200 rounded-lg p-3 space-y-3">
+                          <input
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                          />
+                          <div className="flex gap-2">
                             <button
-                              onClick={() => startEditTeam(t)}
-                              className="px-4 py-2 bg-black text-white font-medium rounded-lg hover:bg-gray-800 transition-all shadow-md"
+                              onClick={() => saveEditTeam(t.id)}
+                              disabled={savingEdit}
+                              className="px-4 py-1.5 bg-black text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-all"
                             >
-                              Edit
+                              {savingEdit ? "Saving..." : "Save"}
                             </button>
                             <button
-                              onClick={() => copyCode(t.id, t.invite_code)}
-                              className={`px-4 py-2 font-medium rounded-lg transition-all shadow-md ${
-                                copiedCodeForTeamId === t.id
-                                  ? "bg-green-600 text-white"
-                                  : "bg-gray-100 text-gray-800 hover:bg-gray-200"
-                              }`}
+                              onClick={cancelEditTeam}
+                              disabled={savingEdit}
+                              className="px-4 py-1.5 border border-gray-300 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-all font-medium"
                             >
-                              {copiedCodeForTeamId === t.id ? "✓ Copied!" : "Copy Code"}
+                              Cancel
                             </button>
-                            <button
-                                onClick={() => deleteTeam(t.id)}
-                                className="px-4 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-all shadow-md"
-                              >
-                                Delete
-                              </button>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      ) : (
+                        <div className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 transition-all flex items-center justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-gray-900">{t.name}</div>
+                            <div className="text-xs text-gray-600 mt-0.5">
+                              Code:{" "}
+                              <span className="font-mono font-bold text-gray-900">
+                                {t.invite_code}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="relative" ref={openMenuTeamId === t.id ? menuRef : null}>
+                            <button
+                              onClick={() => setOpenMenuTeamId(openMenuTeamId === t.id ? null : t.id)}
+                              className="p-2 hover:bg-gray-200 rounded-lg transition-all"
+                              aria-label="Team options"
+                            >
+                              <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 16 16">
+                                <circle cx="8" cy="2" r="1.5"/>
+                                <circle cx="8" cy="8" r="1.5"/>
+                                <circle cx="8" cy="14" r="1.5"/>
+                              </svg>
+                            </button>
+
+                            {openMenuTeamId === t.id && (
+                              <div className="absolute right-0 mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                                <button
+                                  onClick={() => {
+                                    startEditTeam(t);
+                                    setOpenMenuTeamId(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-all text-sm font-medium text-gray-700 border-b border-gray-100"
+                                >
+                                  Edit Team
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    copyCode(t.id, t.invite_code);
+                                    setOpenMenuTeamId(null);
+                                  }}
+                                  className={`w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-all text-sm font-medium border-b border-gray-100 ${
+                                    copiedCodeForTeamId === t.id
+                                      ? "text-green-600"
+                                      : "text-gray-700"
+                                  }`}
+                                >
+                                  {copiedCodeForTeamId === t.id ? "✓ Copied!" : "Copy Code"}
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    deleteTeam(t.id);
+                                    setOpenMenuTeamId(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2.5 hover:bg-red-50 transition-all text-sm font-medium text-red-600 rounded-b-lg"
+                                >
+                                  Delete Team
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -388,49 +432,67 @@ type RosterRow = {
               ) : (
                 <div className="space-y-6">
                   {rosterGrouped.ordered.map((g) => (
-                    <div key={g.team_id} className="border-2 border-gray-100 rounded-lg p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="text-lg font-semibold text-gray-900">{g.team_name}</div>
-                        <div className="text-sm text-gray-600">
+                    <div key={g.team_id} className="space-y-2">
+                      <div className="flex items-center justify-between px-2 py-1">
+                        <div className="text-base font-semibold text-gray-900">{g.team_name}</div>
+                        <div className="text-xs text-gray-600">
                           {g.players.length} player{g.players.length === 1 ? "" : "s"}
                         </div>
                       </div>
 
                       {g.players.length === 0 ? (
-                        <div className="text-sm text-gray-500 mt-3">
-                          No players yet. Share this team’s invite code.
+                        <div className="text-sm text-gray-500 px-2 py-2">
+                          No players yet. Share this team's invite code.
                         </div>
                       ) : (
-                        <div className="space-y-3 mt-4">
+                        <div className="space-y-1">
                           {g.players.map((p) => (
                             <div
                               key={p.user_id}
-                              className="border-2 border-gray-100 rounded-lg p-4 hover:border-gray-200 transition-all flex items-start justify-between gap-4"
+                              className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 transition-all flex items-center justify-between gap-4"
                             >
-                              <div>
-                                <div className="font-semibold text-lg text-gray-900">{p.name ?? "Unnamed"}</div>
-                                <div className="text-sm text-gray-600 mt-1">
-                                  Graduation Year: <span className="font-medium">{p.grad_year ?? "—"}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-gray-900">{p.name ?? "Unnamed"}</div>
+                                <div className="text-xs text-gray-600 mt-0.5">
+                                  Grad Year: <span className="font-medium">{p.grad_year ?? "—"}</span>
                                 </div>
                               </div>
 
-                              <div className="flex flex-col gap-2">
-                                <Link
-                                  href={`/players/${p.user_id}/edit`}
-                                  className="px-4 py-2 bg-black text-white font-medium rounded-lg hover:bg-gray-800 transition-all shadow-md text-center"
-                                >
-                                  Edit
-                                </Link>
-
+                              <div className="relative" ref={openMenuPlayerId === p.user_id ? playerMenuRef : null}>
                                 <button
-                                  onClick={() => removePlayer(p.user_id)}
-                                  className="px-4 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-all shadow-md"
+                                  onClick={() => setOpenMenuPlayerId(openMenuPlayerId === p.user_id ? null : p.user_id)}
+                                  className="p-2 hover:bg-gray-200 rounded-lg transition-all"
+                                  aria-label="Player options"
                                 >
-                                  Remove
+                                  <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 16 16">
+                                    <circle cx="8" cy="2" r="1.5"/>
+                                    <circle cx="8" cy="8" r="1.5"/>
+                                    <circle cx="8" cy="14" r="1.5"/>
+                                  </svg>
                                 </button>
+
+                                {openMenuPlayerId === p.user_id && (
+                                  <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                                    <Link
+                                      href={`/players/${p.user_id}/edit`}
+                                      onClick={() => setOpenMenuPlayerId(null)}
+                                      className="block w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-all text-sm font-medium text-gray-700 border-b border-gray-100"
+                                    >
+                                      Edit Player
+                                    </Link>
+                                    <button
+                                      onClick={() => {
+                                        removePlayer(p.user_id);
+                                        setOpenMenuPlayerId(null);
+                                      }}
+                                      className="w-full text-left px-4 py-2.5 hover:bg-red-50 transition-all text-sm font-medium text-red-600 rounded-b-lg"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             </div>
-
                           ))}
                         </div>
                       )}
@@ -438,24 +500,63 @@ type RosterRow = {
                   ))}
 
                   {rosterGrouped.unassigned.length > 0 && (
-                    <div className="border-2 border-yellow-100 bg-yellow-50 rounded-lg p-4">
-                      <div className="text-lg font-semibold text-gray-900">Unassigned</div>
-                      <div className="text-sm text-gray-700 mt-1">
-                        These players have no team_id (shouldn’t happen once you enforce it).
+                    <div className="space-y-2 mt-6">
+                      <div className="flex items-center justify-between px-2 py-1">
+                        <div className="text-base font-semibold text-yellow-800">Unassigned</div>
+                        <div className="text-xs text-yellow-700">
+                          {rosterGrouped.unassigned.length} player{rosterGrouped.unassigned.length === 1 ? "" : "s"}
+                        </div>
+                      </div>
+                      <div className="text-xs text-yellow-700 px-2">
+                        These players have no team assigned.
                       </div>
 
-                      <div className="space-y-3 mt-4">
+                      <div className="space-y-1">
                         {rosterGrouped.unassigned.map((p) => (
                           <div
                             key={p.user_id}
-                            className="border-2 border-yellow-100 rounded-lg p-4 bg-white"
+                            className="border border-yellow-200 bg-yellow-50 rounded-lg p-3 hover:bg-yellow-100 transition-all flex items-center justify-between gap-4"
                           >
-                            <div className="font-semibold text-lg text-gray-900">
-                              {p.name ?? "Unnamed"}
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-gray-900">{p.name ?? "Unnamed"}</div>
+                              <div className="text-xs text-gray-600 mt-0.5">
+                                Grad Year: <span className="font-medium">{p.grad_year ?? "—"}</span>
+                              </div>
                             </div>
-                            <div className="text-sm text-gray-600 mt-1">
-                              Graduation Year:{" "}
-                              <span className="font-medium">{p.grad_year ?? "—"}</span>
+
+                            <div className="relative" ref={openMenuPlayerId === p.user_id ? playerMenuRef : null}>
+                              <button
+                                onClick={() => setOpenMenuPlayerId(openMenuPlayerId === p.user_id ? null : p.user_id)}
+                                className="p-2 hover:bg-yellow-200 rounded-lg transition-all"
+                                aria-label="Player options"
+                              >
+                                <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 16 16">
+                                  <circle cx="8" cy="2" r="1.5"/>
+                                  <circle cx="8" cy="8" r="1.5"/>
+                                  <circle cx="8" cy="14" r="1.5"/>
+                                </svg>
+                              </button>
+
+                              {openMenuPlayerId === p.user_id && (
+                                <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                                  <Link
+                                    href={`/players/${p.user_id}/edit`}
+                                    onClick={() => setOpenMenuPlayerId(null)}
+                                    className="block w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-all text-sm font-medium text-gray-700 border-b border-gray-100"
+                                  >
+                                    Edit Player
+                                  </Link>
+                                  <button
+                                    onClick={() => {
+                                      removePlayer(p.user_id);
+                                      setOpenMenuPlayerId(null);
+                                    }}
+                                    className="w-full text-left px-4 py-2.5 hover:bg-red-50 transition-all text-sm font-medium text-red-600 rounded-b-lg"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </div>
                         ))}

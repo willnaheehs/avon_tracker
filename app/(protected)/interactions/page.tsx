@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import supabase from "@/lib/supabaseClient";
 import { useProfile } from "@/components/useProfile";
@@ -30,6 +30,14 @@ export default function InteractionsPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // dropdown menu
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // filters
+  const [filterTeam, setFilterTeam] = useState<string>("all");
+  const [filterGradYear, setFilterGradYear] = useState<string>("all");
+
   async function deleteInteraction(id: string) {
     if (!window.confirm("Delete this log? This cannot be undone.")) return;
 
@@ -44,6 +52,20 @@ export default function InteractionsPage() {
     // remove from UI immediately
     setRows((prev) => prev.filter((x) => x.id !== id));
   }
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpenMenuId(null);
+      }
+    }
+
+    if (openMenuId) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [openMenuId]);
 
   useEffect(() => {
     async function load() {
@@ -148,6 +170,17 @@ export default function InteractionsPage() {
 
   const isCoach = profile.role === "coach";
 
+  // Get unique teams and grad years for filters
+  const uniqueTeams = Array.from(new Set(rows.map(r => r.teamName).filter(Boolean))) as string[];
+  const uniqueGradYears = Array.from(new Set(rows.map(r => r.gradYear).filter(Boolean))).sort((a, b) => (a as number) - (b as number)) as number[];
+
+  // Apply filters
+  const filteredRows = rows.filter(r => {
+    if (filterTeam !== "all" && r.teamName !== filterTeam) return false;
+    if (filterGradYear !== "all" && String(r.gradYear) !== filterGradYear) return false;
+    return true;
+  });
+
   return (
     <main className="min-h-screen bg-gradient-to-b from-[#9DCFF5] to-[#7ab8e8] p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -167,77 +200,149 @@ export default function InteractionsPage() {
         </div>
 
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {rows.map((r) => (
-            <div key={r.id} className="bg-white rounded-xl shadow-md overflow-hidden">
-              <div className="bg-black text-white px-6 py-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-bold text-xl truncate">{r.type ?? "(unknown)"}</div>
-                    <span className="text-sm font-medium">
-                      {new Date(r.occurred_on).toLocaleDateString()}
-                    </span>
-                  </div>
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+            {error}
+          </div>
+        )}
 
-                  <div className="flex gap-2 shrink-0">
-                    <Link
-                      href={`/interactions/${r.id}/edit`}
-                      className="px-3 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-all"
-                    >
-                      Edit
-                    </Link>
+        {isCoach && rows.length > 0 && (
+          <div className="bg-white rounded-xl shadow-md p-4">
+            <div className="flex items-center gap-4">
+              <div className="text-sm font-medium text-gray-600 uppercase tracking-wide">Filters</div>
 
-                    <button
-                      onClick={() => deleteInteraction(r.id)}
-                      className="px-3 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-all"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <select
+                value={filterTeam}
+                onChange={(e) => setFilterTeam(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+              >
+                <option value="all">All Teams</option>
+                {uniqueTeams.map((team) => (
+                  <option key={team} value={team}>
+                    {team}
+                  </option>
+                ))}
+              </select>
 
+              <select
+                value={filterGradYear}
+                onChange={(e) => setFilterGradYear(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+              >
+                <option value="all">All Grad Years</option>
+                {uniqueGradYears.map((year) => (
+                  <option key={year} value={String(year)}>
+                    Class of {year}
+                  </option>
+                ))}
+              </select>
 
-              <div className="p-6 space-y-4">
-                {isCoach && (
-                  <div className="space-y-2">
-                    <div className="font-bold text-lg text-gray-900">{r.playerName ?? r.subject_user_id}</div>
-                    <div className="flex items-center gap-3">
-                      {r.gradYear && (
-                        <span className="border-2 border-gray-300 px-4 py-1 rounded-full text-sm font-medium bg-gray-50">
-                          Class of {r.gradYear}
-                        </span>
-                      )}
-                      {r.teamName && (
-                        <span className="border-2 border-gray-300 px-4 py-1 rounded-full text-sm font-medium bg-[#9DCFF5]">
-                          {r.teamName}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
+              {(filterTeam !== "all" || filterGradYear !== "all") && (
+                <button
+                  onClick={() => {
+                    setFilterTeam("all");
+                    setFilterGradYear("all");
+                  }}
+                  className="text-sm text-gray-600 hover:text-gray-900 font-medium underline"
+                >
+                  Clear Filters
+                </button>
+              )}
 
-                {r.college_name && (
-                  <div className="border-2 border-gray-300 rounded-lg p-4 bg-purple-50">
-                    <div className="text-sm font-medium text-gray-600 uppercase tracking-wide mb-1">College/University</div>
-                    <div className="font-bold text-lg text-purple-900">{r.college_name}</div>
-                  </div>
-                )}
-
-                {r.notes && (
-                  <div className="border-2 border-gray-300 rounded-lg p-4 bg-gray-50">
-                    <div className="text-sm font-medium text-gray-600 uppercase tracking-wide mb-2">Notes</div>
-                    <div className="text-gray-800">{r.notes}</div>
-                  </div>
-                )}
+              <div className="text-sm text-gray-600 ml-auto font-medium">
+                Showing {filteredRows.length} of {rows.length}
               </div>
             </div>
-          ))}
+          </div>
+        )}
 
-          {rows.length === 0 && (
-            <div className="col-span-full bg-white rounded-xl shadow-md p-12 text-center">
+        <div className="bg-white rounded-xl shadow-md p-6">
+          {rows.length === 0 ? (
+            <div className="text-center py-12">
               <p className="text-gray-700 text-lg font-medium mb-3">No interactions yet.</p>
               <p className="text-gray-500 text-sm">Click "Log Interaction" to get started.</p>
+            </div>
+          ) : filteredRows.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-700 text-lg font-medium mb-3">No interactions match your filters.</p>
+              <p className="text-gray-500 text-sm">Try adjusting your filters or clearing them.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filteredRows.map((r) => (
+                <div
+                  key={r.id}
+                  className="border border-gray-200 rounded-lg overflow-hidden hover:bg-gray-50 transition-all flex items-center justify-between gap-4"
+                >
+                  <Link
+                    href={isCoach ? `/players/${r.subject_user_id}/interactions` : `/interactions`}
+                    className="flex-1 min-w-0 grid grid-cols-4 gap-4 p-3 hover:bg-gray-100 transition-all"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-xs text-gray-500 mb-0.5">Player</div>
+                      <div className="font-semibold text-gray-900 truncate">
+                        {isCoach ? (r.playerName ?? "Unknown") : "You"}
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="text-xs text-gray-500 mb-0.5">College</div>
+                      <div className="font-medium text-gray-900 truncate">
+                        {r.college_name ?? "—"}
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="text-xs text-gray-500 mb-0.5">Team</div>
+                      <div className="font-medium text-gray-900 truncate">
+                        {isCoach ? (r.teamName ?? "—") : "—"}
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="text-xs text-gray-500 mb-0.5">Date</div>
+                      <div className="font-medium text-gray-900">
+                        {new Date(r.occurred_on).toLocaleDateString()}
+                      </div>
+                    </div>
+                  </Link>
+
+                  <div className="relative p-3" ref={openMenuId === r.id ? menuRef : null}>
+                    <button
+                      onClick={() => setOpenMenuId(openMenuId === r.id ? null : r.id)}
+                      className="p-2 hover:bg-gray-200 rounded-lg transition-all"
+                      aria-label="Interaction options"
+                    >
+                      <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 16 16">
+                        <circle cx="8" cy="2" r="1.5"/>
+                        <circle cx="8" cy="8" r="1.5"/>
+                        <circle cx="8" cy="14" r="1.5"/>
+                      </svg>
+                    </button>
+
+                    {openMenuId === r.id && (
+                      <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                        <Link
+                          href={`/interactions/${r.id}/edit`}
+                          onClick={() => setOpenMenuId(null)}
+                          className="block w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-all text-sm font-medium text-gray-700 border-b border-gray-100"
+                        >
+                          Edit
+                        </Link>
+                        <button
+                          onClick={() => {
+                            deleteInteraction(r.id);
+                            setOpenMenuId(null);
+                          }}
+                          className="w-full text-left px-4 py-2.5 hover:bg-red-50 transition-all text-sm font-medium text-red-600 rounded-b-lg"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
