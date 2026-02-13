@@ -50,7 +50,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="h-screen w-screen bg-[#9DCFF5] flex flex-col overflow-hidden">
+    <div className="min-h-screen w-screen bg-[#9DCFF5] flex flex-col">
       <div className="flex justify-center pt-8 pb-6">
         <img
           src="/2way-logo.png"
@@ -59,7 +59,7 @@ export default function LoginPage() {
         />
       </div>
 
-      <div className="flex-1 flex items-center justify-center px-4 pb-32">
+      <div className="flex items-center justify-center px-4 pb-32">
         <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
           <h1 className="text-3xl font-bold text-center mb-2 text-gray-900">Welcome</h1>
           <p className="text-center text-gray-600 mb-8">Sign in to your recruiting log</p>
