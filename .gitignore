@@ -21,6 +21,3 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
-
-# Generated demo credentials
-demo/demo-accounts-*.json
