@@ -1,42 +1,82 @@
 "use client";
 
-// Page to create a new interaction.  Players log interactions for
-// themselves, while coaches select a player from their roster.  The
-// interaction records the date (today), type and notes.
-
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import supabase from "@/lib/supabaseClient";
 import { useProfile } from "@/components/useProfile";
+import ProtectedLoading from "@/components/ProtectedLoading";
+
+type CaseloadRow = {
+  client_name: string | null;
+  client_user_id: string;
+  organization_id: string | null;
+  organization_name: string | null;
+};
+
+type ClientThread = {
+  id: string;
+  subject: string | null;
+  status: string;
+};
 
 export default function NewInteractionPage() {
   const { loading, profile } = useProfile();
   const router = useRouter();
-  const [type, setType] = useState("");
-  const [notes, setNotes] = useState("");
-  const [collegeName, setCollegeName] = useState("");
-  const [roster, setRoster] = useState<{ user_id: string; name: string | null }[]>([]);
-  const [subjectId, setSubjectId] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [caseload, setCaseload] = useState<CaseloadRow[]>([]);
+  const [threads, setThreads] = useState<ClientThread[]>([]);
+  const [clientId, setClientId] = useState("");
+  const [threadId, setThreadId] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Load roster for coaches
   useEffect(() => {
-    async function loadRoster() {
-      if (profile?.role === "coach") {
-        const { data } = await supabase
-          .from("profiles")
-          .select("user_id, name")
-          .eq("coach_user_id", profile.user_id)
-          .eq("role", "player")
-          .order("name", { ascending: true });
-        setRoster(data ?? []);
+    async function loadProviderData() {
+      const { data, error } = await supabase
+        .from("my_caseload")
+        .select("client_name, client_user_id, organization_id, organization_name")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        setErr(error.message);
+        return;
+      }
+
+      setCaseload((data ?? []) as CaseloadRow[]);
+    }
+
+    async function loadClientThreads() {
+      if (!profile) return;
+
+      const { data, error } = await supabase
+        .from("note_threads")
+        .select("id, subject, status")
+        .eq("client_user_id", profile.user_id)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        setErr(error.message);
+        return;
+      }
+
+      const rows = (data ?? []) as ClientThread[];
+      setThreads(rows);
+      if (rows.length === 1) {
+        setThreadId(rows[0].id);
       }
     }
-    if (profile) loadRoster();
+
+    if (profile?.role === "provider") {
+      loadProviderData();
+    }
+
+    if (profile?.role === "client") {
+      loadClientThreads();
+    }
   }, [profile]);
 
-  if (loading) return null;
+  if (loading) return <ProtectedLoading message="Loading note composer and available threads." />;
   if (!profile) {
     return <main className="p-6">Account not registered.</main>;
   }
@@ -44,61 +84,136 @@ export default function NewInteractionPage() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-    // For coaches, ensure a player is selected
-    if (profile.role === "coach" && !subjectId) {
-      setErr("Select a player to log an interaction for.");
+
+    const trimmedBody = body.trim();
+    if (!trimmedBody) {
+      setErr("Please enter a note.");
       return;
     }
+
     setSaving(true);
-    const subject_user_id = profile.role === "coach" ? subjectId : profile.user_id;
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-    const { error } = await supabase.from("interactions").insert([
-      {
-        subject_user_id,
-        created_by_user_id: profile.user_id,
-        occurred_on: today,
-        type: type || null,
-        notes: notes || null,
-        college_name: collegeName || null,
-      },
-    ]);
+
+    if (profile.role === "provider") {
+      if (!clientId) {
+        setSaving(false);
+        setErr("Select a client.");
+        return;
+      }
+
+      const selectedAssignment = caseload.find((row) => row.client_user_id === clientId);
+      const { data: createdThreadId, error: threadError } = await supabase.rpc("create_note_thread", {
+        p_client_user_id: clientId,
+        p_organization_id: selectedAssignment?.organization_id ?? null,
+        p_subject: subject.trim() || null,
+      });
+
+      if (threadError) {
+        setSaving(false);
+        setErr(threadError.message);
+        return;
+      }
+
+      const { error: noteError } = await supabase.from("notes").insert({
+        body: trimmedBody,
+        thread_id: createdThreadId,
+      });
+
+      setSaving(false);
+
+      if (noteError) {
+        setErr(noteError.message);
+        return;
+      }
+
+      router.push(`/players/${clientId}/interactions`);
+      return;
+    }
+
+    if (!threadId) {
+      setSaving(false);
+      setErr("No client thread is available yet.");
+      return;
+    }
+
+    const { error } = await supabase.from("notes").insert({
+      body: trimmedBody,
+      thread_id: threadId,
+    });
+
     setSaving(false);
+
     if (error) {
       setErr(error.message);
-    } else {
-      // Go back to interactions list
-      router.push("/interactions");
+      return;
     }
+
+    router.push(`/players/${profile.user_id}/interactions`);
   }
 
   return (
-    <main className="min-h-screen bg-linear-to-b from-[#9DCFF5] to-[#7ab8e8] p-6">
-      <div className="max-w-3xl mx-auto space-y-6">
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <h1 className="text-3xl font-bold text-gray-900">Log Interaction</h1>
-        </div>
+    <main className="min-h-screen p-6 lg:p-8">
+      <div className="mx-auto max-w-3xl space-y-6">
+        <section className="rounded-[2rem] border border-white/80 bg-white/82 p-8 shadow-[0_24px_70px_rgba(12,83,121,0.14)] backdrop-blur">
+          <h1 className="text-4xl font-black tracking-tight text-[#16322a]">
+            {profile.role === "provider" ? "Create a Client Note" : "Send a Note"}
+          </h1>
+          <p className="mt-3 text-base text-[#55776a]">
+            {profile.role === "provider"
+              ? "Start or continue a thread with a client from your caseload."
+              : "Send a quick update or reply back into your thread."}
+          </p>
+        </section>
 
         {err && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700 shadow-sm">
             {err}
           </div>
         )}
 
-        <div className="bg-white rounded-xl shadow-md p-6">
+        <section className="rounded-[2rem] border border-white/80 bg-white/82 p-6 shadow-[0_24px_70px_rgba(12,83,121,0.12)] backdrop-blur">
           <form onSubmit={submit} className="space-y-5">
-            {profile.role === "coach" && (
+            {profile.role === "provider" ? (
+              <>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[#335b6d]">Client</label>
+                  <select
+                    value={clientId}
+                    onChange={(e) => setClientId(e.target.value)}
+                    required
+                    className="w-full rounded-2xl border border-[#b9dff4] bg-[#fbfeff] px-4 py-3 text-[#16322a] focus:outline-none focus:ring-2 focus:ring-[#0f8df4]"
+                  >
+                    <option value="">Select client</option>
+                    {caseload.map((row) => (
+                      <option key={`${row.client_user_id}-${row.organization_id ?? "org"}`} value={row.client_user_id}>
+                        {row.client_name ?? row.client_user_id}
+                        {row.organization_name ? ` • ${row.organization_name}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[#335b6d]">Thread Subject</label>
+                  <input
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    placeholder="e.g., Rehab check-in"
+                    className="w-full rounded-2xl border border-[#d7ebb2] bg-[#fcfff6] px-4 py-3 text-[#16322a] focus:outline-none focus:ring-2 focus:ring-[#69c931]"
+                  />
+                </div>
+              </>
+            ) : (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Player</label>
+                <label className="mb-2 block text-sm font-medium text-[#335b6d]">Thread</label>
                 <select
-                  value={subjectId}
-                  onChange={(e) => setSubjectId(e.target.value)}
-                  required
-                  className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                  value={threadId}
+                  onChange={(e) => setThreadId(e.target.value)}
+                  className="w-full rounded-2xl border border-[#b9dff4] bg-[#fbfeff] px-4 py-3 text-[#16322a] focus:outline-none focus:ring-2 focus:ring-[#0f8df4]"
                 >
-                  <option value="">Select Player</option>
-                  {roster.map((p) => (
-                    <option key={p.user_id} value={p.user_id}>
-                      {p.name ?? p.user_id}
+                  <option value="">Select thread</option>
+                  {threads.map((thread) => (
+                    <option key={thread.id} value={thread.id}>
+                      {thread.subject ?? "General Notes"} • {thread.status}
                     </option>
                   ))}
                 </select>
@@ -106,44 +221,24 @@ export default function NewInteractionPage() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-              <input
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                placeholder="e.g., Phone call, Campus visit, Email"
-                className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">College/University</label>
-              <input
-                value={collegeName}
-                onChange={(e) => setCollegeName(e.target.value)}
-                placeholder="College or university name"
-                className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+              <label className="mb-2 block text-sm font-medium text-[#335b6d]">Note</label>
               <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Add any additional details about this interaction"
-                className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all h-32 resize-none"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="Write your update, response, or follow-up note here"
+                className="h-40 w-full resize-none rounded-2xl border border-[#b9dff4] bg-[#fbfeff] px-4 py-3 text-[#16322a] focus:outline-none focus:ring-2 focus:ring-[#0f8df4]"
               />
             </div>
 
             <button
               type="submit"
               disabled={saving}
-              className="w-full rounded-lg bg-black px-6 py-3 text-white font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
+              className="w-full rounded-2xl bg-[linear-gradient(135deg,_#0f8df4,_#0b6fd6)] px-6 py-3 font-bold text-white shadow-lg transition-all hover:-translate-y-0.5 disabled:opacity-50"
             >
-              {saving ? "Saving..." : "Save Interaction"}
+              {saving ? "Sending..." : "Send Note"}
             </button>
           </form>
-        </div>
+        </section>
       </div>
     </main>
   );

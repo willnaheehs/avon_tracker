@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import supabase from "@/lib/supabaseClient";
+import ProtectedLoading from "@/components/ProtectedLoading";
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -34,6 +35,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     };
   }, [router]);
 
-  if (!ready) return null;
+  if (!ready) return <ProtectedLoading message="Checking your secure session and loading your workspace." />;
   return <>{children}</>;
 }

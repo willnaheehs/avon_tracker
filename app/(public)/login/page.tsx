@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import supabase from "@/lib/supabaseClient";
 
@@ -10,6 +10,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [uiReady, setUiReady] = useState(false);
+
+  useEffect(() => {
+    setUiReady(true);
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -20,14 +25,12 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
 
-      // Confirm we have a session + user id
       const { data: sess, error: sessErr } = await supabase.auth.getSession();
       if (sessErr) throw sessErr;
 
       const uid = sess.session?.user?.id;
       if (!uid) throw new Error("No session after login.");
 
-      // Check if this user is "registered" in our app (has a profile row)
       const { data: prof, error: profErr } = await supabase
         .from("profiles")
         .select("user_id")
@@ -50,25 +53,26 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen w-screen bg-[#9DCFF5] flex flex-col">
-      <div className="flex justify-center pt-8 pb-6">
-        <img
-          src="/2way-logo.png"
-          alt="2W Lacrosse Logo"
-          className="w-72 h-72 rounded-full object-cover"
-        />
+    <div className="min-h-screen w-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,145,255,0.26),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(105,201,49,0.24),_transparent_28%),linear-gradient(160deg,_#eff9ff_0%,_#e7f8f2_50%,_#fdfbe9_100%)] flex flex-col">
+      <div className="flex justify-center pt-10 pb-6 px-4">
+        <div className="rounded-[2.25rem] border border-white/90 bg-white/75 p-5 shadow-[0_24px_60px_rgba(15,111,214,0.16)] backdrop-blur">
+          <img src="/CarePath.png" alt="CarePath logo" className="w-80 max-w-full object-contain sm:w-96" />
+        </div>
       </div>
 
-      <div className="flex items-center justify-center px-4 pb-32">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
+      <div className="flex items-center justify-center px-4 pb-20">
+        <div
+          data-login-ready={uiReady ? "true" : "false"}
+          className="w-full max-w-md rounded-[2rem] border border-white/90 bg-white/88 p-8 shadow-[0_28px_80px_rgba(23,90,73,0.18)] backdrop-blur"
+        >
           <h1 className="text-3xl font-bold text-center mb-2 text-gray-900">Welcome</h1>
-          <p className="text-center text-gray-600 mb-8">Sign in to your recruiting log</p>
+          <p className="text-center text-[#55776a] mb-8">Sign in to your care team workspace</p>
 
           <form onSubmit={onSubmit} className="space-y-5">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
               <input
-                className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#9DCFF5] focus:border-transparent transition"
+                className="w-full rounded-xl border border-[#b9dff4] bg-[#fbfeff] px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#0f8df4] focus:border-transparent transition"
                 type="email"
                 placeholder="you@example.com"
                 value={email}
@@ -80,7 +84,7 @@ export default function LoginPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
               <input
-                className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#9DCFF5] focus:border-transparent transition"
+                className="w-full rounded-xl border border-[#b9dff4] bg-[#fbfeff] px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#0f8df4] focus:border-transparent transition"
                 type="password"
                 placeholder="••••••••"
                 value={password}
@@ -97,8 +101,8 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              className="w-full rounded-lg bg-black text-white px-4 py-3 font-semibold hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-lg"
-              disabled={busy}
+              className="w-full rounded-xl bg-[linear-gradient(135deg,_#0f8df4,_#0b6fd6)] text-white px-4 py-3 font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition shadow-lg hover:-translate-y-0.5 hover:shadow-xl"
+              disabled={busy || !uiReady}
             >
               {busy ? "Signing in…" : "Sign In"}
             </button>
@@ -106,8 +110,8 @@ export default function LoginPage() {
 
           <div className="mt-6 text-center">
             <p className="text-gray-600">
-              Don't have an account?{" "}
-              <a href="/register" className="text-[#9DCFF5] hover:text-[#7ab8e0] font-semibold underline">
+              Need an account?{" "}
+              <a href="/register" className="text-[#4d9b1c] hover:text-[#3e7f15] font-semibold underline">
                 Create one
               </a>
             </p>

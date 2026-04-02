@@ -1,348 +1,232 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import supabase from "@/lib/supabaseClient";
 import { useProfile } from "@/components/useProfile";
+import ProtectedLoading from "@/components/ProtectedLoading";
 
-type Row = {
+type ThreadRow = {
+  client_user_id: string;
+  created_at: string;
   id: string;
-  type: string | null;
-  occurred_on: string;
-  notes: string | null;
-  subject_user_id: string;
-  playerName?: string | null;
-  gradYear?: number | null;
-  teamName?: string | null;
-  college_name?: string | null;
+  status: string;
+  subject: string | null;
 };
 
-type RosterRow = {
-  user_id: string;
-  name: string | null;
-  grad_year: number | null;
-  coach_user_id: string | null;
+type NoteRow = {
+  author_user_id: string;
+  body: string;
+  created_at: string;
+  id: string;
+  thread_id: string;
 };
 
+type CaseloadRow = {
+  client_name: string | null;
+  client_user_id: string;
+  organization_name: string | null;
+};
 
 export default function InteractionsPage() {
   const { loading, profile } = useProfile();
-  const [rows, setRows] = useState<Row[]>([]);
+  const [threads, setThreads] = useState<ThreadRow[]>([]);
+  const [latestNotes, setLatestNotes] = useState<Record<string, NoteRow | undefined>>({});
+  const [caseload, setCaseload] = useState<Record<string, CaseloadRow>>({});
   const [error, setError] = useState<string | null>(null);
 
-  // dropdown menu
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  // filters
-  const [filterTeam, setFilterTeam] = useState<string>("all");
-  const [filterGradYear, setFilterGradYear] = useState<string>("all");
-
-  async function deleteInteraction(id: string) {
-    if (!window.confirm("Delete this log? This cannot be undone.")) return;
-
-    setError(null);
-
-    const { error } = await supabase.from("interactions").delete().eq("id", id);
-    if (error) {
-      setError(error.message);
-      return;
-    }
-
-    // remove from UI immediately
-    setRows((prev) => prev.filter((x) => x.id !== id));
-  }
-
-  // Close dropdown when clicking outside
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setOpenMenuId(null);
-      }
-    }
+    async function loadProviderThreads() {
+      const caseloadRes = await supabase
+        .from("my_caseload")
+        .select("client_name, client_user_id, organization_name");
 
-    if (openMenuId) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [openMenuId]);
-
-  useEffect(() => {
-    async function load() {
-      if (!profile) return;
-
-      setError(null);
-      setRows([]);
-
-      if (profile.role === "player") {
-        // Player: only my interactions
-        const { data, error } = await supabase
-          .from("interactions")
-          .select("id, type, occurred_on, notes, subject_user_id, college_name")
-          .eq("subject_user_id", profile.user_id)
-          .order("occurred_on", { ascending: false });
-
-        if (error) {
-          setError(error.message);
-          return;
-        }
-
-        setRows((data ?? []) as Row[]);
+      if (caseloadRes.error) {
+        setError(caseloadRes.error.message);
         return;
       }
 
-      if (profile.role === "coach") {
-        // Coach: load roster (scoped by auth.uid() via view)
-        const rosterRes = await supabase
-          .from("profiles")
-          .select("user_id, name, grad_year, coach_user_id")
-          .eq("role", "player")
-          .eq("coach_user_id", profile.user_id)
-          .order("name");
+      const rows = (caseloadRes.data ?? []) as CaseloadRow[];
+      const clientIds = rows.map((row) => row.client_user_id);
+      const caseloadMap = rows.reduce<Record<string, CaseloadRow>>((acc, row) => {
+        acc[row.client_user_id] = row;
+        return acc;
+      }, {});
+      setCaseload(caseloadMap);
 
-        if (rosterRes.error) {
-          setError(rosterRes.error.message);
-          return;
-        }
-
-        const roster = (rosterRes.data ?? []) as RosterRow[];
-        const rosterIds = roster.map((p) => p.user_id);
-
-        const rosterMap: Record<string, { name: string | null; gradYear: number | null }> = {};
-        roster.forEach((p) => {
-          rosterMap[p.user_id] = { name: p.name, gradYear: p.grad_year };
-        });
-
-        // Fetch coach's team name
-        const coachRes = await supabase
-          .from("coaches")
-          .select("team_name")
-          .eq("user_id", profile.user_id)
-          .maybeSingle();
-
-        const teamName = coachRes.data?.team_name ?? null;
-
-        if (rosterIds.length === 0) {
-          setRows([]);
-          return;
-        }
-
-        // Only fetch interactions for roster players
-        const { data, error } = await supabase
-          .from("interactions")
-          .select("id, type, occurred_on, notes, subject_user_id, college_name")
-          .in("subject_user_id", rosterIds)
-          .order("occurred_on", { ascending: false });
-
-        if (error) {
-          setError(error.message);
-          return;
-        }
-
-        setRows(
-          (data ?? []).map((d: any) => ({
-            id: d.id,
-            type: d.type,
-            occurred_on: d.occurred_on,
-            notes: d.notes,
-            subject_user_id: d.subject_user_id,
-            playerName: rosterMap[d.subject_user_id]?.name ?? null,
-            gradYear: rosterMap[d.subject_user_id]?.gradYear ?? null,
-            teamName: teamName,
-            college_name: d.college_name,
-          }))
-        );
+      if (clientIds.length === 0) {
+        setThreads([]);
+        setLatestNotes({});
+        return;
       }
+
+      const threadRes = await supabase
+        .from("note_threads")
+        .select("id, client_user_id, subject, status, created_at")
+        .in("client_user_id", clientIds)
+        .order("created_at", { ascending: false });
+
+      if (threadRes.error) {
+        setError(threadRes.error.message);
+        return;
+      }
+
+      const threadRows = (threadRes.data ?? []) as ThreadRow[];
+      setThreads(threadRows);
+      await loadLatestNotes(threadRows.map((thread) => thread.id));
+    }
+
+    async function loadClientThreads() {
+      if (!profile) return;
+
+      const threadRes = await supabase
+        .from("note_threads")
+        .select("id, client_user_id, subject, status, created_at")
+        .eq("client_user_id", profile.user_id)
+        .order("created_at", { ascending: false });
+
+      if (threadRes.error) {
+        setError(threadRes.error.message);
+        return;
+      }
+
+      const threadRows = (threadRes.data ?? []) as ThreadRow[];
+      setThreads(threadRows);
+      await loadLatestNotes(threadRows.map((thread) => thread.id));
+    }
+
+    async function loadLatestNotes(threadIds: string[]) {
+      if (threadIds.length === 0) {
+        setLatestNotes({});
+        return;
+      }
+
+      const notesRes = await supabase
+        .from("notes")
+        .select("id, thread_id, body, created_at, author_user_id")
+        .in("thread_id", threadIds)
+        .order("created_at", { ascending: false });
+
+      if (notesRes.error) {
+        setError(notesRes.error.message);
+        return;
+      }
+
+      const noteMap: Record<string, NoteRow | undefined> = {};
+      ((notesRes.data ?? []) as NoteRow[]).forEach((note) => {
+        if (!noteMap[note.thread_id]) {
+          noteMap[note.thread_id] = note;
+        }
+      });
+
+      setLatestNotes(noteMap);
+    }
+
+    async function load() {
+      if (!profile) return;
+      setError(null);
+
+      if (profile.role === "provider") {
+        await loadProviderThreads();
+        return;
+      }
+
+      await loadClientThreads();
     }
 
     if (!loading) load();
   }, [loading, profile]);
 
-  if (loading) return null;
+  const heading = useMemo(() => {
+    if (profile?.role === "provider") return "Threads";
+    return "My Threads";
+  }, [profile]);
 
+  if (loading) return <ProtectedLoading message="Loading threads and the latest notes." />;
   if (!profile) {
-    return (
-      <main className="p-6">
-        You must be signed in to view interactions.
-      </main>
-    );
+    return <main className="p-6">You must be signed in to view threads.</main>;
   }
 
-  const isCoach = profile.role === "coach";
-
-  // Get unique teams and grad years for filters
-  const uniqueTeams = Array.from(new Set(rows.map(r => r.teamName).filter(Boolean))) as string[];
-  const uniqueGradYears = Array.from(new Set(rows.map(r => r.gradYear).filter(Boolean))).sort((a, b) => (a as number) - (b as number)) as number[];
-
-  // Apply filters
-  const filteredRows = rows.filter(r => {
-    if (filterTeam !== "all" && r.teamName !== filterTeam) return false;
-    if (filterGradYear !== "all" && String(r.gradYear) !== filterGradYear) return false;
-    return true;
-  });
-
   return (
-    <main className="min-h-screen bg-gradient-to-b from-[#9DCFF5] to-[#7ab8e8] p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold text-gray-900">
-              {isCoach ? "All Interactions" : "My Interactions"}
-            </h1>
+    <main className="min-h-screen p-6 lg:p-8">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <section className="rounded-[2rem] border border-white/80 bg-white/82 p-8 shadow-[0_24px_70px_rgba(12,83,121,0.14)] backdrop-blur">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="inline-flex rounded-full bg-[#f4fbe8] px-4 py-2 text-xs font-black tracking-[0.18em] text-[#4d9b1c] uppercase">
+                Conversation Center
+              </div>
+              <h1 className="mt-4 text-4xl font-black tracking-tight text-[#16322a]">{heading}</h1>
+              <p className="mt-3 max-w-2xl text-base leading-7 text-[#55776a]">
+                Review active note threads and jump back into client communication quickly.
+              </p>
+            </div>
 
             <Link
               href="/interactions/new"
-              className="px-6 py-3 bg-black text-white font-medium rounded-lg hover:bg-gray-800 transition-all shadow-md hover:shadow-lg"
+              className="inline-flex items-center justify-center rounded-2xl bg-[linear-gradient(135deg,_#0f8df4,_#0b6fd6)] px-6 py-3 font-bold text-white shadow-lg transition-all hover:-translate-y-0.5"
             >
-              Log Interaction
+              New Note
             </Link>
           </div>
-        </div>
-
+        </section>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700 shadow-sm">
             {error}
           </div>
         )}
 
-        {isCoach && rows.length > 0 && (
-          <div className="bg-white rounded-xl shadow-md p-4">
-            <div className="flex items-center gap-4">
-              <div className="text-sm font-medium text-gray-600 uppercase tracking-wide">Filters</div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {threads.map((thread) => {
+            const latest = latestNotes[thread.id];
+            const client = caseload[thread.client_user_id];
+            const title =
+              profile.role === "provider" ? client?.client_name ?? "Unnamed client" : thread.subject ?? "General Notes";
+            const subtitle =
+              profile.role === "provider"
+                ? client?.organization_name ?? "Unknown organization"
+                : thread.status;
 
-              <select
-                value={filterTeam}
-                onChange={(e) => setFilterTeam(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+            return (
+              <Link
+                key={thread.id}
+                href={
+                  profile.role === "provider"
+                    ? `/players/${thread.client_user_id}/interactions`
+                    : `/players/${profile.user_id}/interactions`
+                }
+                className="block rounded-[1.75rem] border border-white/80 bg-white/82 p-6 shadow-[0_20px_60px_rgba(12,83,121,0.12)] transition-all hover:-translate-y-0.5 hover:shadow-[0_26px_80px_rgba(12,83,121,0.15)] backdrop-blur"
               >
-                <option value="all">All Teams</option>
-                {uniqueTeams.map((team) => (
-                  <option key={team} value={team}>
-                    {team}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={filterGradYear}
-                onChange={(e) => setFilterGradYear(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
-              >
-                <option value="all">All Grad Years</option>
-                {uniqueGradYears.map((year) => (
-                  <option key={year} value={String(year)}>
-                    Class of {year}
-                  </option>
-                ))}
-              </select>
-
-              {(filterTeam !== "all" || filterGradYear !== "all") && (
-                <button
-                  onClick={() => {
-                    setFilterTeam("all");
-                    setFilterGradYear("all");
-                  }}
-                  className="text-sm text-gray-600 hover:text-gray-900 font-medium underline"
-                >
-                  Clear Filters
-                </button>
-              )}
-
-              <div className="text-sm text-gray-600 ml-auto font-medium">
-                Showing {filteredRows.length} of {rows.length}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="bg-white rounded-xl shadow-md p-6">
-          {rows.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-gray-700 text-lg font-medium mb-3">No interactions yet.</p>
-              <p className="text-gray-500 text-sm">Click "Log Interaction" to get started.</p>
-            </div>
-          ) : filteredRows.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-gray-700 text-lg font-medium mb-3">No interactions match your filters.</p>
-              <p className="text-gray-500 text-sm">Try adjusting your filters or clearing them.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {filteredRows.map((r) => (
-                <div
-                  key={r.id}
-                  className="border border-gray-200 rounded-lg overflow-hidden hover:bg-gray-50 transition-all flex items-center justify-between gap-4"
-                >
-                  <Link
-                    href={isCoach ? `/players/${r.subject_user_id}/interactions` : `/interactions`}
-                    className="flex-1 min-w-0 grid grid-cols-4 gap-4 p-3 hover:bg-gray-100 transition-all"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-xs text-gray-500 mb-0.5">Player</div>
-                      <div className="font-semibold text-gray-900 truncate">
-                        {isCoach ? (r.playerName ?? "Unknown") : "You"}
-                      </div>
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="text-xs text-gray-500 mb-0.5">College</div>
-                      <div className="font-medium text-gray-900 truncate">
-                        {r.college_name ?? "—"}
-                      </div>
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="text-xs text-gray-500 mb-0.5">Team</div>
-                      <div className="font-medium text-gray-900 truncate">
-                        {isCoach ? (r.teamName ?? "—") : "—"}
-                      </div>
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="text-xs text-gray-500 mb-0.5">Date</div>
-                      <div className="font-medium text-gray-900">
-                        {new Date(r.occurred_on).toLocaleDateString()}
-                      </div>
-                    </div>
-                  </Link>
-
-                  <div className="relative p-3" ref={openMenuId === r.id ? menuRef : null}>
-                    <button
-                      onClick={() => setOpenMenuId(openMenuId === r.id ? null : r.id)}
-                      className="p-2 hover:bg-gray-200 rounded-lg transition-all"
-                      aria-label="Interaction options"
-                    >
-                      <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 16 16">
-                        <circle cx="8" cy="2" r="1.5"/>
-                        <circle cx="8" cy="8" r="1.5"/>
-                        <circle cx="8" cy="14" r="1.5"/>
-                      </svg>
-                    </button>
-
-                    {openMenuId === r.id && (
-                      <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-                        <Link
-                          href={`/interactions/${r.id}/edit`}
-                          onClick={() => setOpenMenuId(null)}
-                          className="block w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-all text-sm font-medium text-gray-700 border-b border-gray-100"
-                        >
-                          Edit
-                        </Link>
-                        <button
-                          onClick={() => {
-                            deleteInteraction(r.id);
-                            setOpenMenuId(null);
-                          }}
-                          className="w-full text-left px-4 py-2.5 hover:bg-red-50 transition-all text-sm font-medium text-red-600 rounded-b-lg"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    )}
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-xl font-black text-[#16322a]">{title}</div>
+                    <div className="mt-1 text-sm text-[#55776a]">{subtitle}</div>
                   </div>
+                  <span className="rounded-full bg-[#eef9ff] px-3 py-1 text-xs font-black tracking-[0.14em] text-[#0a7bdc]">
+                    {thread.status}
+                  </span>
                 </div>
-              ))}
+
+                <div className="rounded-2xl border border-[#d6eefc] bg-[linear-gradient(135deg,_#fafdff,_#f5fbeb)] p-4">
+                  <div className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-[#4d9b1c]">Latest note</div>
+                  <div className="whitespace-pre-wrap text-[#24483d]">
+                    {latest?.body ?? "No notes have been sent in this thread yet."}
+                  </div>
+                  {latest?.created_at && (
+                    <div className="mt-3 text-xs text-[#55776a]">
+                      {new Date(latest.created_at).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+              </Link>
+            );
+          })}
+
+          {threads.length === 0 && (
+            <div className="col-span-full rounded-[2rem] border border-white/80 bg-white/82 p-12 text-center shadow-[0_24px_70px_rgba(12,83,121,0.12)] backdrop-blur">
+              <p className="mb-3 text-lg font-bold text-[#24483d]">No threads yet.</p>
+              <p className="text-sm text-[#55776a]">Create the first note to start the conversation.</p>
             </div>
           )}
         </div>

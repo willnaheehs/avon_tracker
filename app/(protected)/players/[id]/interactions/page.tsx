@@ -1,258 +1,234 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import supabase from "@/lib/supabaseClient";
 import { useProfile } from "@/components/useProfile";
+import ProtectedLoading from "@/components/ProtectedLoading";
 
-type Interaction = {
-  id: string;
-  type: string | null;
-  occurred_on: string;
-  notes: string | null;
-  subject_user_id: string;
-  college_name?: string | null;
+type ClientInfo = {
+  name: string | null;
+  user_id: string;
 };
 
-type PlayerInfo = {
-  name: string | null;
-  grad_year: number | null;
-  team_name: string | null;
+type ThreadRow = {
+  created_at: string;
+  id: string;
+  status: string;
+  subject: string | null;
+};
+
+type NoteRow = {
+  author_user_id: string;
+  body: string;
+  created_at: string;
+  id: string;
+  thread_id: string;
 };
 
 export default function PlayerInteractionsPage() {
   const params = useParams();
-  const playerId = params.id as string;
+  const clientId = params.id as string;
   const { loading, profile } = useProfile();
-  const [interactions, setInteractions] = useState<Interaction[]>([]);
-  const [playerInfo, setPlayerInfo] = useState<PlayerInfo | null>(null);
+  const [client, setClient] = useState<ClientInfo | null>(null);
+  const [threads, setThreads] = useState<ThreadRow[]>([]);
+  const [notes, setNotes] = useState<Record<string, NoteRow[]>>({});
   const [error, setError] = useState<string | null>(null);
 
-  // dropdown menu
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    async function load() {
+      if (!profile || !clientId) return;
+      setError(null);
 
-  async function deleteInteraction(id: string) {
-    if (!window.confirm("Delete this log? This cannot be undone.")) return;
+      const clientRes = await supabase
+        .from("profiles")
+        .select("user_id, name")
+        .eq("user_id", clientId)
+        .maybeSingle();
 
-    setError(null);
+      if (clientRes.error) {
+        setError(clientRes.error.message);
+        return;
+      }
 
-    const { error } = await supabase.from("interactions").delete().eq("id", id);
+      setClient((clientRes.data as ClientInfo | null) ?? null);
+
+      const threadRes = await supabase
+        .from("note_threads")
+        .select("id, subject, status, created_at")
+        .eq("client_user_id", clientId)
+        .order("created_at", { ascending: false });
+
+      if (threadRes.error) {
+        setError(threadRes.error.message);
+        return;
+      }
+
+      const threadRows = (threadRes.data ?? []) as ThreadRow[];
+      setThreads(threadRows);
+
+      const threadIds = threadRows.map((thread) => thread.id);
+      if (threadIds.length === 0) {
+        setNotes({});
+        return;
+      }
+
+      const notesRes = await supabase
+        .from("notes")
+        .select("id, thread_id, body, created_at, author_user_id")
+        .in("thread_id", threadIds)
+        .order("created_at", { ascending: true });
+
+      if (notesRes.error) {
+        setError(notesRes.error.message);
+        return;
+      }
+
+      const grouped = ((notesRes.data ?? []) as NoteRow[]).reduce<Record<string, NoteRow[]>>((acc, note) => {
+        if (!acc[note.thread_id]) acc[note.thread_id] = [];
+        acc[note.thread_id].push(note);
+        return acc;
+      }, {});
+
+      setNotes(grouped);
+    }
+
+    if (!loading) load();
+  }, [loading, profile, clientId]);
+
+  const isProvider = useMemo(() => profile?.role === "provider", [profile]);
+
+  async function deleteNote(id: string, threadId: string) {
+    if (!window.confirm("Delete this note? This cannot be undone.")) return;
+
+    const { error } = await supabase.from("notes").delete().eq("id", id);
     if (error) {
       setError(error.message);
       return;
     }
 
-    setInteractions((prev) => prev.filter((x) => x.id !== id));
+    setNotes((prev) => ({
+      ...prev,
+      [threadId]: (prev[threadId] ?? []).filter((note) => note.id !== id),
+    }));
   }
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setOpenMenuId(null);
-      }
-    }
-
-    if (openMenuId) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [openMenuId]);
-
-  useEffect(() => {
-    async function load() {
-      if (!profile || !playerId) return;
-
-      setError(null);
-
-      // Load player info
-      const playerRes = await supabase
-        .from("profiles")
-        .select("name, grad_year, team_id")
-        .eq("user_id", playerId)
-        .single();
-
-      if (playerRes.error) {
-        setError(playerRes.error.message);
-        return;
-      }
-
-      // Load team name if player has a team
-      let teamName = null;
-      if (playerRes.data.team_id) {
-        const teamRes = await supabase
-          .from("teams")
-          .select("name")
-          .eq("id", playerRes.data.team_id)
-          .single();
-
-        if (!teamRes.error) {
-          teamName = teamRes.data.name;
-        }
-      }
-
-      setPlayerInfo({
-        name: playerRes.data.name,
-        grad_year: playerRes.data.grad_year,
-        team_name: teamName,
-      });
-
-      // Load interactions for this player
-      const { data, error } = await supabase
-        .from("interactions")
-        .select("id, type, occurred_on, notes, subject_user_id, college_name")
-        .eq("subject_user_id", playerId)
-        .order("occurred_on", { ascending: false });
-
-      if (error) {
-        setError(error.message);
-        return;
-      }
-
-      setInteractions((data ?? []) as Interaction[]);
-    }
-
-    if (!loading) load();
-  }, [loading, profile, playerId]);
-
-  if (loading) return null;
-
+  if (loading) return <ProtectedLoading message="Loading note history and thread details." />;
   if (!profile) {
-    return (
-      <main className="p-6">
-        You must be signed in to view interactions.
-      </main>
-    );
+    return <main className="p-6">You must be signed in to view note history.</main>;
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-[#9DCFF5] to-[#7ab8e8] p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <div className="flex items-center justify-between">
+    <main className="min-h-screen p-6 lg:p-8">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <section className="rounded-[2rem] border border-white/80 bg-white/82 p-8 shadow-[0_24px_70px_rgba(12,83,121,0.14)] backdrop-blur">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                {playerInfo?.name ?? "Player"}'s Interactions
+              <h1 className="text-4xl font-black tracking-tight text-[#16322a]">
+                {isProvider ? `${client?.name ?? "Client"} Notes` : "My Notes"}
               </h1>
-              <div className="flex items-center gap-3 mt-3">
-                {playerInfo?.grad_year && (
-                  <span className="border-2 border-gray-300 px-4 py-1 rounded-full text-sm font-medium bg-gray-50">
-                    Class of {playerInfo.grad_year}
-                  </span>
-                )}
-                {playerInfo?.team_name && (
-                  <span className="border-2 border-gray-300 px-4 py-1 rounded-full text-sm font-medium bg-[#9DCFF5]">
-                    {playerInfo.team_name}
-                  </span>
-                )}
-                {interactions.length > 0 && (
-                  <span className="border-2 border-gray-300 px-4 py-1 rounded-full text-sm font-medium bg-gray-50">
-                    {interactions.length} Total
-                  </span>
-                )}
+              <div className="mt-3 text-sm text-[#55776a]">
+                {threads.length} {threads.length === 1 ? "thread" : "threads"}
               </div>
             </div>
 
             <div className="flex gap-3">
               <Link
                 href="/interactions"
-                className="px-6 py-3 border-2 border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all shadow-md"
+                className="rounded-2xl border border-[#b9dff4] bg-white/80 px-6 py-3 font-bold text-[#0b6fd6] transition-all hover:-translate-y-0.5"
               >
-                Back to All
+                Back to Threads
               </Link>
               <Link
                 href="/interactions/new"
-                className="px-6 py-3 bg-black text-white font-medium rounded-lg hover:bg-gray-800 transition-all shadow-md hover:shadow-lg"
+                className="rounded-2xl bg-[linear-gradient(135deg,_#0f8df4,_#0b6fd6)] px-6 py-3 font-bold text-white shadow-lg transition-all hover:-translate-y-0.5"
               >
-                Log Interaction
+                New Note
               </Link>
             </div>
           </div>
-        </div>
+        </section>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700 shadow-sm">
             {error}
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {interactions.map((r) => (
-            <div key={r.id} className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all p-6">
-              <div className="flex items-start justify-between gap-4 mb-4">
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold text-xl text-gray-900 truncate mb-1">
-                    {r.type ?? "(unknown)"}
-                  </div>
-                  <div className="text-sm text-gray-600">
-                    {new Date(r.occurred_on).toLocaleDateString()}
+        <div className="space-y-6">
+          {threads.map((thread) => (
+            <section
+              key={thread.id}
+              className="rounded-[1.75rem] border border-white/80 bg-white/82 p-6 shadow-[0_20px_60px_rgba(12,83,121,0.12)] backdrop-blur"
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-black text-[#16322a]">{thread.subject ?? "General Notes"}</h2>
+                  <div className="mt-1 text-sm text-[#55776a]">
+                    {thread.status} • started {new Date(thread.created_at).toLocaleDateString()}
                   </div>
                 </div>
-
-                <div className="relative" ref={openMenuId === r.id ? menuRef : null}>
-                  <button
-                    onClick={() => setOpenMenuId(openMenuId === r.id ? null : r.id)}
-                    className="p-2 hover:bg-gray-200 rounded-lg transition-all"
-                    aria-label="Interaction options"
-                  >
-                    <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 16 16">
-                      <circle cx="8" cy="2" r="1.5"/>
-                      <circle cx="8" cy="8" r="1.5"/>
-                      <circle cx="8" cy="14" r="1.5"/>
-                    </svg>
-                  </button>
-
-                  {openMenuId === r.id && (
-                    <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-                      <Link
-                        href={`/interactions/${r.id}/edit`}
-                        onClick={() => setOpenMenuId(null)}
-                        className="block w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-all text-sm font-medium text-gray-700 border-b border-gray-100"
-                      >
-                        Edit
-                      </Link>
-                      <button
-                        onClick={() => {
-                          deleteInteraction(r.id);
-                          setOpenMenuId(null);
-                        }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-red-50 transition-all text-sm font-medium text-red-600 rounded-b-lg"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <span className="rounded-full bg-[#f4fbe8] px-3 py-1 text-xs font-black tracking-[0.14em] text-[#4d9b1c]">
+                  {thread.status}
+                </span>
               </div>
 
-              <div className="space-y-3">
-                {r.college_name && (
-                  <div className="border-2 border-gray-300 rounded-lg p-4 bg-gray-50">
-                    <div className="text-sm font-medium text-gray-600 uppercase tracking-wide mb-1">
-                      College/University
-                    </div>
-                    <div className="font-bold text-lg text-gray-900">{r.college_name}</div>
-                  </div>
-                )}
+              <div className="mt-5 space-y-3">
+                {(notes[thread.id] ?? []).map((note) => {
+                  const authoredByMe = note.author_user_id === profile.user_id;
+                  return (
+                    <div
+                      key={note.id}
+                      className={`rounded-2xl border p-4 ${
+                        authoredByMe
+                          ? "border-[#b9dff4] bg-[#eef9ff]"
+                          : "border-[#d7ebb2] bg-[#fcfff6]"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-sm font-bold text-[#24483d]">
+                            {authoredByMe ? "You" : "Other participant"}
+                          </div>
+                          <div className="mt-1 text-xs text-[#55776a]">
+                            {new Date(note.created_at).toLocaleString()}
+                          </div>
+                        </div>
 
-                {r.notes && (
-                  <div className="border-2 border-gray-300 rounded-lg p-4 bg-gray-50">
-                    <div className="text-sm font-medium text-gray-600 uppercase tracking-wide mb-2">
-                      Notes
+                        {authoredByMe && (
+                          <div className="flex items-center gap-3 text-sm">
+                            <Link href={`/interactions/${note.id}/edit`} className="font-bold text-[#0b6fd6] underline">
+                              Edit
+                            </Link>
+                            <button
+                              onClick={() => deleteNote(note.id, thread.id)}
+                              className="font-bold text-red-600 underline"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-3 whitespace-pre-wrap text-[#24483d]">{note.body}</div>
                     </div>
-                    <div className="text-gray-800 whitespace-pre-wrap">{r.notes}</div>
+                  );
+                })}
+
+                {(notes[thread.id] ?? []).length === 0 && (
+                  <div className="rounded-2xl border border-dashed border-[#b9dff4] bg-[#fbfeff] p-4 text-[#55776a]">
+                    No notes yet in this thread.
                   </div>
                 )}
               </div>
-            </div>
+            </section>
           ))}
 
-          {interactions.length === 0 && (
-            <div className="col-span-full bg-white rounded-xl shadow-md p-12 text-center">
-              <p className="text-gray-700 text-lg font-medium mb-3">No interactions yet.</p>
-              <p className="text-gray-500 text-sm">Click "Log Interaction" to get started.</p>
+          {threads.length === 0 && (
+            <div className="rounded-[2rem] border border-white/80 bg-white/82 p-12 text-center shadow-[0_24px_70px_rgba(12,83,121,0.12)] backdrop-blur">
+              <p className="mb-3 text-lg font-bold text-[#24483d]">No threads yet.</p>
+              <p className="text-sm text-[#55776a]">Send a note to start the conversation.</p>
             </div>
           )}
         </div>

@@ -4,43 +4,46 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import supabase from "@/lib/supabaseClient";
 
-type Tab = "coach" | "player";
+type Tab = "provider" | "client";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("coach");
+  const [tab, setTab] = useState<Tab>("provider");
 
-  // common
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  // coach fields
-  const [coachName, setCoachName] = useState("");
-  const [teamName, setTeamName] = useState(""); // optional label; can keep or remove later
+  const [providerName, setProviderName] = useState("");
+  const [organizationName, setOrganizationName] = useState("");
 
-  // player fields
-  const [playerName, setPlayerName] = useState("");
-  const [gradYear, setGradYear] = useState<number | "">("");
-  const [teamCode, setTeamCode] = useState(""); // rename in state for clarity
+  const [clientName, setClientName] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
 
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function afterAuthRpc() {
-    if (tab === "coach") {
-      const { error } = await supabase.rpc("register_coach", {
-        p_name: coachName,
-        p_team: teamName, // ok even if you later make it optional in SQL
+    if (tab === "provider") {
+      const { error: registerError } = await supabase.rpc("register_provider", {
+        p_name: providerName,
       });
-      if (error) throw error;
-    } else {
-      const { error } = await supabase.rpc("register_player", {
-        p_name: playerName,
-        p_grad_year: gradYear === "" ? null : Number(gradYear),
-        p_team_code: teamCode, // THIS must match your new SQL function signature
-      });
-      if (error) throw error;
+      if (registerError) throw registerError;
+
+      const trimmedOrganizationName = organizationName.trim();
+      if (trimmedOrganizationName) {
+        const { error: organizationError } = await supabase.rpc("create_organization", {
+          p_name: trimmedOrganizationName,
+        });
+        if (organizationError) throw organizationError;
+      }
+      return;
     }
+
+    const { error } = await supabase.rpc("register_client", {
+      p_name: clientName,
+      p_invite_code: inviteCode.trim().toUpperCase(),
+    });
+    if (error) throw error;
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -49,18 +52,13 @@ export default function RegisterPage() {
     setBusy(true);
 
     try {
-      // 1) sign up
       const { error: signUpErr } = await supabase.auth.signUp({ email, password });
       if (signUpErr) throw signUpErr;
 
-      // 2) sign in (ensures session exists for auth.uid() inside RPC)
       const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
       if (signInErr) throw signInErr;
 
-      // 3) create profile row via RPC
       await afterAuthRpc();
-
-      // 4) go to app
       router.replace("/interactions");
     } catch (e: any) {
       setErr(e?.message ?? "Registration failed");
@@ -71,42 +69,40 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen w-screen bg-[#9DCFF5] flex flex-col overflow-y-auto">
-      <div className="flex justify-center pt-8 pb-6">
-        <img
-          src="/2way-logo.png"
-          alt="2W Lacrosse Logo"
-          className="w-72 h-72 rounded-full object-cover"
-        />
+    <div className="min-h-screen w-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,145,255,0.26),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(105,201,49,0.24),_transparent_28%),linear-gradient(160deg,_#eff9ff_0%,_#e7f8f2_50%,_#fdfbe9_100%)] flex flex-col overflow-y-auto">
+      <div className="flex justify-center pt-10 pb-6 px-4">
+        <div className="rounded-[2.25rem] border border-white/90 bg-white/75 p-5 shadow-[0_24px_60px_rgba(15,111,214,0.16)] backdrop-blur">
+          <img src="/CarePath.png" alt="CarePath logo" className="w-80 max-w-full object-contain sm:w-96" />
+        </div>
       </div>
 
       <div className="flex-1 flex items-center justify-center px-4 py-8">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
+        <div className="w-full max-w-md rounded-[2rem] border border-white/90 bg-white/88 p-8 shadow-[0_28px_80px_rgba(23,90,73,0.18)] backdrop-blur">
           <h1 className="text-3xl font-bold text-center mb-2 text-gray-900">Create Account</h1>
-          <p className="text-center text-gray-600 mb-6">Join your recruiting log</p>
+          <p className="text-center text-[#55776a] mb-6">Set up your provider or client account</p>
 
           <div className="flex gap-2 mb-6">
             <button
               type="button"
-              className={`flex-1 rounded-lg px-4 py-2.5 font-medium transition-all ${
-                tab === "coach"
-                  ? "bg-black text-white shadow-md"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              className={`flex-1 rounded-xl px-4 py-2.5 font-medium transition-all ${
+                tab === "provider"
+                  ? "bg-[linear-gradient(135deg,_#0f8df4,_#0b6fd6)] text-white shadow-md"
+                  : "bg-[#eef8ff] text-[#33617a] hover:bg-[#dff0fb]"
               }`}
-              onClick={() => setTab("coach")}
+              onClick={() => setTab("provider")}
             >
-              Coach
+              Provider
             </button>
             <button
               type="button"
-              className={`flex-1 rounded-lg px-4 py-2.5 font-medium transition-all ${
-                tab === "player"
-                  ? "bg-black text-white shadow-md"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              className={`flex-1 rounded-xl px-4 py-2.5 font-medium transition-all ${
+                tab === "client"
+                  ? "bg-[linear-gradient(135deg,_#69c931,_#4d9b1c)] text-white shadow-md"
+                  : "bg-[#f4fbe8] text-[#48683a] hover:bg-[#ebf7d5]"
               }`}
-              onClick={() => setTab("player")}
+              onClick={() => setTab("client")}
             >
-              Player
+              Client
             </button>
           </div>
 
@@ -114,7 +110,7 @@ export default function RegisterPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
               <input
-                className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                className="w-full rounded-xl border border-[#b9dff4] bg-[#fbfeff] px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#0f8df4] focus:border-transparent transition-all"
                 type="email"
                 placeholder="you@example.com"
                 value={email}
@@ -126,36 +122,37 @@ export default function RegisterPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
               <input
-                className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                className="w-full rounded-xl border border-[#b9dff4] bg-[#fbfeff] px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#0f8df4] focus:border-transparent transition-all"
                 type="password"
-                placeholder="Create a password"
+                placeholder="Choose a password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
             </div>
 
-            {tab === "coach" ? (
+            {tab === "provider" ? (
               <>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
                   <input
-                    className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                    className="w-full rounded-xl border border-[#b9dff4] bg-[#fbfeff] px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#0f8df4] focus:border-transparent transition-all"
                     placeholder="Your full name"
-                    value={coachName}
-                    onChange={(e) => setCoachName(e.target.value)}
+                    value={providerName}
+                    onChange={(e) => setProviderName(e.target.value)}
                     required
                   />
                 </div>
 
-                {/* You can make this optional if you want */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Team Label (optional)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    First Organization (optional)
+                  </label>
                   <input
-                    className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
-                    placeholder="e.g., My Program"
-                    value={teamName}
-                    onChange={(e) => setTeamName(e.target.value)}
+                    className="w-full rounded-xl border border-[#d7ebb2] bg-[#fcfff6] px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#69c931] focus:border-transparent transition-all"
+                    placeholder="e.g., Downtown Sports Therapy"
+                    value={organizationName}
+                    onChange={(e) => setOrganizationName(e.target.value)}
                   />
                 </div>
               </>
@@ -164,33 +161,23 @@ export default function RegisterPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
                   <input
-                    className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
+                    className="w-full rounded-xl border border-[#b9dff4] bg-[#fbfeff] px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#0f8df4] focus:border-transparent transition-all"
                     placeholder="Your full name"
-                    value={playerName}
-                    onChange={(e) => setPlayerName(e.target.value)}
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Graduation Year</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Organization Invite Code
+                  </label>
                   <input
-                    className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
-                    type="number"
-                    placeholder="e.g., 2027"
-                    value={gradYear}
-                    onChange={(e) => setGradYear(e.target.value === "" ? "" : Number(e.target.value))}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Team Invite Code</label>
-                  <input
-                    className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
-                    placeholder="Enter team invite code"
-                    value={teamCode}
-                    onChange={(e) => setTeamCode(e.target.value)}
+                    className="w-full rounded-xl border border-[#d7ebb2] bg-[#fcfff6] px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#69c931] focus:border-transparent transition-all uppercase"
+                    placeholder="Enter invite code"
+                    value={inviteCode}
+                    onChange={(e) => setInviteCode(e.target.value)}
                     required
                   />
                 </div>
@@ -204,7 +191,7 @@ export default function RegisterPage() {
             )}
 
             <button
-              className="w-full rounded-lg bg-black px-4 py-3 text-white font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg hover:shadow-xl"
+              className="w-full rounded-xl bg-[linear-gradient(135deg,_#0f8df4,_#0b6fd6)] px-4 py-3 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg hover:-translate-y-0.5 hover:shadow-xl"
               disabled={busy}
             >
               {busy ? "Creating account..." : "Create account"}
@@ -213,7 +200,7 @@ export default function RegisterPage() {
 
           <p className="text-center text-sm text-gray-600 mt-6">
             Already have an account?{" "}
-            <a className="text-black font-medium hover:underline" href="/login">
+            <a className="text-[#0b6fd6] font-medium hover:underline" href="/login">
               Sign in
             </a>
           </p>

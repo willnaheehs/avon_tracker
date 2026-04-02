@@ -1,573 +1,231 @@
 "use client";
 
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import supabase from "@/lib/supabaseClient";
 import { useProfile } from "@/components/useProfile";
-import Link from "next/link";
+import ProtectedLoading from "@/components/ProtectedLoading";
 
-type TeamRow = {
+type OrganizationRow = {
   id: string;
   name: string;
   invite_code: string;
-  created_at?: string;
+  created_at: string;
+  membership_role: "owner" | "member";
 };
 
-type RosterRow = {
-  user_id: string;
-  name: string | null;
-  grad_year: number | null;
-  team_id: string | null;
-  team_name: string | null;
+type CaseloadRow = {
+  assignment_id: string;
+  client_name: string | null;
+  client_user_id: string;
+  organization_name: string | null;
+  status: string | null;
 };
 
-  export default function TeamPage() {
-    const { loading, profile } = useProfile();
+export default function TeamPage() {
+  const { loading, profile } = useProfile();
+  const [organizations, setOrganizations] = useState<OrganizationRow[]>([]);
+  const [caseload, setCaseload] = useState<CaseloadRow[]>([]);
+  const [newOrganizationName, setNewOrganizationName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-    const [teams, setTeams] = useState<TeamRow[]>([]);
-    const [roster, setRoster] = useState<RosterRow[]>([]);
-    const [err, setErr] = useState<string | null>(null);
+  async function loadData() {
+    if (profile?.role !== "provider") return;
 
-    // create team
-    const [newTeamName, setNewTeamName] = useState("");
-    const [creating, setCreating] = useState(false);
+    setError(null);
 
-    // edit team name
-    const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
-    const [editingName, setEditingName] = useState("");
-    const [savingEdit, setSavingEdit] = useState(false);
-
-    // copy feedback
-    const [copiedCodeForTeamId, setCopiedCodeForTeamId] = useState<string | null>(null);
-
-    // dropdown menu
-    const [openMenuTeamId, setOpenMenuTeamId] = useState<string | null>(null);
-    const [openMenuPlayerId, setOpenMenuPlayerId] = useState<string | null>(null);
-    const menuRef = useRef<HTMLDivElement>(null);
-    const playerMenuRef = useRef<HTMLDivElement>(null);
-
-    async function removePlayer(playerId: string) {
-      if (!profile) return;
-
-      const ok = window.confirm("Remove this player from your roster? They will be detached from teams.");
-      if (!ok) return;
-
-      setErr(null);
-
-      const { error } = await supabase
-        .from("profiles")
-        .update({ coach_user_id: null, team_id: null })
-        .eq("user_id", playerId)
-        .eq("role", "player")
-        .eq("coach_user_id", profile.user_id);
-
-      if (error) {
-        setErr(error.message);
-        return;
-      }
-
-      await loadTeamsAndRoster();
-    }
-
-
-  async function deleteTeam(teamId: string) {
-    if (!profile) return;
-
-    const ok = window.confirm("Delete this team? Players on this team will be unassigned.");
-    if (!ok) return;
-
-    setErr(null);
-
-    // 1) Unassign players from this team (prevents FK errors)
-    const unassignRes = await supabase
-      .from("profiles")
-      .update({ team_id: null })
-      .eq("team_id", teamId)
-      .eq("coach_user_id", profile.user_id)
-      .eq("role", "player");
-
-    if (unassignRes.error) {
-      setErr(unassignRes.error.message);
-      return;
-    }
-
-    // 2) Delete the team
-    const delRes = await supabase.from("teams").delete().eq("id", teamId);
-
-    if (delRes.error) {
-      setErr(delRes.error.message);
-      return;
-    }
-
-    await loadTeamsAndRoster();
-  }
-
-  async function loadTeamsAndRoster() {
-    if (!profile) return;
-    setErr(null);
-
-    // Teams
-    const teamsRes = await supabase
-      .from("teams")
-      .select("id, name, invite_code, created_at")
+    const organizationsRes = await supabase
+      .from("provider_organizations")
+      .select("membership_role, organizations(id, name, invite_code, created_at)")
+      .eq("provider_user_id", profile.user_id)
       .order("created_at", { ascending: true });
 
-    if (teamsRes.error) {
-      setErr(teamsRes.error.message);
+    if (organizationsRes.error) {
+      setError(organizationsRes.error.message);
       return;
     }
-    setTeams((teamsRes.data ?? []) as TeamRow[]);
 
-    // Roster (grouping depends on this including team_id/team_name)
-    const rosterRes = await supabase
-      .from("my_roster")
-      .select("user_id, name, grad_year, team_id, team_name")
-      .order("name");
+    const organizationRows = (organizationsRes.data ?? [])
+      .map((row: any) => {
+        const organization = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations;
+        if (!organization) return null;
+        return {
+          id: organization.id,
+          name: organization.name,
+          invite_code: organization.invite_code,
+          created_at: organization.created_at,
+          membership_role: row.membership_role,
+        } satisfies OrganizationRow;
+      })
+      .filter(Boolean) as OrganizationRow[];
 
-    if (rosterRes.error) {
-      setErr(rosterRes.error.message);
+    setOrganizations(organizationRows);
+
+    const caseloadRes = await supabase
+      .from("my_caseload")
+      .select("assignment_id, client_name, client_user_id, organization_name, status")
+      .order("created_at", { ascending: false });
+
+    if (caseloadRes.error) {
+      setError(caseloadRes.error.message);
       return;
     }
-    setRoster((rosterRes.data ?? []) as RosterRow[]);
+
+    setCaseload((caseloadRes.data ?? []) as CaseloadRow[]);
   }
 
   useEffect(() => {
-    if (loading || !profile) return;
-
-    if (profile.role !== "coach") {
-      setErr("Only coaches have a team page.");
-      return;
+    if (!loading && profile?.role === "provider") {
+      loadData();
     }
+  }, [loading, profile]);
 
-    loadTeamsAndRoster();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, profile?.user_id]);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setOpenMenuTeamId(null);
-      }
-      if (playerMenuRef.current && !playerMenuRef.current.contains(event.target as Node)) {
-        setOpenMenuPlayerId(null);
-      }
-    }
-
-    if (openMenuTeamId || openMenuPlayerId) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [openMenuTeamId, openMenuPlayerId]);
-
-  const rosterGrouped = useMemo(() => {
-    // group roster by team_id (and keep an "Unassigned" bucket just in case)
-    const map = new Map<string, { team_id: string; team_name: string; players: RosterRow[] }>();
-    const unassigned: RosterRow[] = [];
-
-    for (const p of roster) {
-      if (!p.team_id) {
-        unassigned.push(p);
-        continue;
-      }
-      const key = p.team_id;
-      if (!map.has(key)) {
-        map.set(key, {
-          team_id: key,
-          team_name: p.team_name ?? "Unnamed Team",
-          players: [],
-        });
-      }
-      map.get(key)!.players.push(p);
-    }
-
-    // Ensure every team shows up even if empty
-    for (const t of teams) {
-      if (!map.has(t.id)) {
-        map.set(t.id, { team_id: t.id, team_name: t.name, players: [] });
-      }
-    }
-
-    // Return teams order first, then unassigned at end
-    const ordered = teams.map((t) => map.get(t.id)!).filter(Boolean);
-    return { ordered, unassigned };
-  }, [roster, teams]);
-
-  async function handleCreateTeam() {
-    if (!profile) return;
-    const name = newTeamName.trim();
+  async function createOrganization(e: React.FormEvent) {
+    e.preventDefault();
+    const name = newOrganizationName.trim();
     if (!name) {
-      setErr("Team name can’t be empty.");
+      setError("Organization name cannot be empty.");
       return;
     }
 
     setCreating(true);
-    setErr(null);
+    setError(null);
 
-    const { data, error } = await supabase.rpc("create_team", { p_name: name });
-
+    const { error } = await supabase.rpc("create_organization", { p_name: name });
     setCreating(false);
 
     if (error) {
-      setErr(error.message);
+      setError(error.message);
       return;
     }
 
-    // RPC returns a row (or array of rows depending on supabase client behavior)
-    // We'll just reload to keep things consistent.
-    setNewTeamName("");
-    await loadTeamsAndRoster();
+    setNewOrganizationName("");
+    await loadData();
   }
 
-  function startEditTeam(t: TeamRow) {
-    setEditingTeamId(t.id);
-    setEditingName(t.name);
-    setErr(null);
+  if (loading) return <ProtectedLoading message="Loading your organizations and invite codes." />;
+  if (!profile) return <main className="p-6">You must be signed in.</main>;
+  if (profile.role !== "provider") {
+    return <main className="p-6">Only providers can manage organizations.</main>;
   }
-
-  function cancelEditTeam() {
-    setEditingTeamId(null);
-    setEditingName("");
-    setErr(null);
-  }
-
-  async function saveEditTeam(teamId: string) {
-    const name = editingName.trim();
-    if (!name) {
-      setErr("Team name can’t be empty.");
-      return;
-    }
-
-    setSavingEdit(true);
-    setErr(null);
-
-    const { error } = await supabase.from("teams").update({ name }).eq("id", teamId);
-
-    setSavingEdit(false);
-
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-
-    setEditingTeamId(null);
-    setEditingName("");
-    await loadTeamsAndRoster();
-  }
-
-  async function copyCode(teamId: string, code: string) {
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopiedCodeForTeamId(teamId);
-      setTimeout(() => setCopiedCodeForTeamId(null), 1500);
-    } catch {
-      setErr("Could not copy invite code.");
-    }
-  }
-
-  if (loading) return null;
-  if (!profile) return <main className="p-6">Please log in.</main>;
 
   return (
-    <main className="min-h-screen bg-linear-to-b from-[#9DCFF5] to-[#7ab8e8] p-6">
-      <div className="max-w-3xl mx-auto space-y-6">
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <h1 className="text-3xl font-bold text-gray-900">Team Management</h1>
-          <p className="text-sm text-gray-600 mt-2">
-            Create teams and share that team’s invite code so players join the right roster.
-          </p>
-        </div>
+    <main className="min-h-screen p-6 lg:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <section className="rounded-[2rem] border border-white/80 bg-white/82 p-8 shadow-[0_24px_70px_rgba(12,83,121,0.14)] backdrop-blur">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="inline-flex rounded-full bg-[#eef9ff] px-4 py-2 text-xs font-black tracking-[0.18em] text-[#0a7bdc] uppercase">
+                Organization Hub
+              </div>
+              <h1 className="mt-4 text-4xl font-black tracking-tight text-[#16322a]">Organizations</h1>
+              <p className="mt-3 max-w-2xl text-base leading-7 text-[#55776a]">
+                Create organizations, share invite codes, and keep a quick pulse on your active
+                client relationships.
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[linear-gradient(135deg,_#eef9ff,_#f4fbe8)] px-5 py-4 text-sm text-[#406657]">
+              <div className="font-bold text-[#16322a]">{organizations.length} organizations</div>
+              <div>{caseload.length} active assignments</div>
+            </div>
+          </div>
+        </section>
 
-        {err && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-            {err}
+        {error && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700 shadow-sm">
+            {error}
           </div>
         )}
 
-        {profile.role === "coach" && (
-          <>
-            {/* Create team */}
-            <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
-              <div className="text-sm font-medium text-gray-600 uppercase tracking-wide">
-                Create a Team
-              </div>
+        <section className="rounded-[2rem] border border-white/80 bg-white/82 p-6 shadow-[0_24px_70px_rgba(12,83,121,0.12)] backdrop-blur">
+          <form onSubmit={createOrganization} className="flex flex-col gap-4 md:flex-row">
+            <input
+              value={newOrganizationName}
+              onChange={(e) => setNewOrganizationName(e.target.value)}
+              placeholder="New organization name"
+              className="flex-1 rounded-2xl border border-[#b9dff4] bg-[#fbfeff] px-4 py-3 text-[#16322a] focus:outline-none focus:ring-2 focus:ring-[#0f8df4]"
+            />
+            <button
+              type="submit"
+              disabled={creating}
+              className="rounded-2xl bg-[linear-gradient(135deg,_#0f8df4,_#0b6fd6)] px-6 py-3 font-bold text-white shadow-lg transition-all hover:-translate-y-0.5 disabled:opacity-50"
+            >
+              {creating ? "Creating..." : "Create Organization"}
+            </button>
+          </form>
+        </section>
 
-              <div className="flex gap-3">
-                <input
-                  type="text"
-                  value={newTeamName}
-                  onChange={(e) => setNewTeamName(e.target.value)}
-                  className="flex-1 rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
-                  placeholder="e.g., Varsity / JV / 2027s"
-                />
-                <button
-                  onClick={handleCreateTeam}
-                  disabled={creating}
-                  className="px-6 py-3 bg-black text-white font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-all shadow-md"
-                >
-                  {creating ? "Creating..." : "Create"}
-                </button>
-              </div>
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_1fr]">
+          <section className="rounded-[2rem] border border-white/80 bg-white/82 p-6 shadow-[0_24px_70px_rgba(12,83,121,0.12)] backdrop-blur">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-2xl font-black text-[#16322a]">Your Organizations</h2>
+              <span className="rounded-full bg-[#eef9ff] px-3 py-1 text-sm font-bold text-[#0a7bdc]">
+                {organizations.length} total
+              </span>
             </div>
 
-            {/* Teams list */}
-            <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
-              <div className="text-sm font-medium text-gray-600 uppercase tracking-wide">
-                Your Teams
-              </div>
-
-              {teams.length === 0 ? (
-                <div className="text-gray-600">
-                  No teams yet. Create one above, then share its invite code.
+            <div className="space-y-4">
+              {organizations.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[#b9dff4] bg-[#fbfeff] p-6 text-[#55776a]">
+                  No organizations yet. Create one above to start inviting clients.
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {teams.map((t) => (
-                    <div key={t.id}>
-                      {editingTeamId === t.id ? (
-                        <div className="border border-gray-200 rounded-lg p-3 space-y-3">
-                          <input
-                            value={editingName}
-                            onChange={(e) => setEditingName(e.target.value)}
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all"
-                          />
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => saveEditTeam(t.id)}
-                              disabled={savingEdit}
-                              className="px-4 py-1.5 bg-black text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-all"
-                            >
-                              {savingEdit ? "Saving..." : "Save"}
-                            </button>
-                            <button
-                              onClick={cancelEditTeam}
-                              disabled={savingEdit}
-                              className="px-4 py-1.5 border border-gray-300 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-all font-medium"
-                            >
-                              Cancel
-                            </button>
-                          </div>
+                organizations.map((organization) => (
+                  <div
+                    key={organization.id}
+                    className="rounded-[1.5rem] border border-[#d6eefc] bg-[linear-gradient(135deg,_#fafdff,_#f5fbeb)] p-5 shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="text-xl font-black text-[#16322a]">{organization.name}</div>
+                        <div className="mt-1 text-sm capitalize text-[#55776a]">
+                          {organization.membership_role} access
                         </div>
-                      ) : (
-                        <div className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 transition-all flex items-center justify-between gap-4">
-                          <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-gray-900">{t.name}</div>
-                            <div className="text-xs text-gray-600 mt-0.5">
-                              Code:{" "}
-                              <span className="font-mono font-bold text-gray-900">
-                                {t.invite_code}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="relative" ref={openMenuTeamId === t.id ? menuRef : null}>
-                            <button
-                              onClick={() => setOpenMenuTeamId(openMenuTeamId === t.id ? null : t.id)}
-                              className="p-2 hover:bg-gray-200 rounded-lg transition-all"
-                              aria-label="Team options"
-                            >
-                              <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 16 16">
-                                <circle cx="8" cy="2" r="1.5"/>
-                                <circle cx="8" cy="8" r="1.5"/>
-                                <circle cx="8" cy="14" r="1.5"/>
-                              </svg>
-                            </button>
-
-                            {openMenuTeamId === t.id && (
-                              <div className="absolute right-0 mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-                                <button
-                                  onClick={() => {
-                                    startEditTeam(t);
-                                    setOpenMenuTeamId(null);
-                                  }}
-                                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-all text-sm font-medium text-gray-700 border-b border-gray-100"
-                                >
-                                  Edit Team
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    copyCode(t.id, t.invite_code);
-                                    setOpenMenuTeamId(null);
-                                  }}
-                                  className={`w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-all text-sm font-medium border-b border-gray-100 ${
-                                    copiedCodeForTeamId === t.id
-                                      ? "text-green-600"
-                                      : "text-gray-700"
-                                  }`}
-                                >
-                                  {copiedCodeForTeamId === t.id ? "✓ Copied!" : "Copy Code"}
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    deleteTeam(t.id);
-                                    setOpenMenuTeamId(null);
-                                  }}
-                                  className="w-full text-left px-4 py-2.5 hover:bg-red-50 transition-all text-sm font-medium text-red-600 rounded-b-lg"
-                                >
-                                  Delete Team
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
+                      </div>
+                      <span className="rounded-full bg-[linear-gradient(135deg,_#69c931,_#4d9b1c)] px-3 py-1 text-xs font-black tracking-[0.14em] text-white">
+                        {organization.invite_code}
+                      </span>
                     </div>
-                  ))}
-                </div>
+                    <p className="mt-4 text-sm leading-6 text-[#55776a]">
+                      Share this invite code with clients so they can join the right organization.
+                    </p>
+                  </div>
+                ))
               )}
             </div>
+          </section>
 
-            {/* Roster grouped by team */}
-            <div className="bg-white rounded-xl shadow-md p-6">
-              <div className="text-sm font-medium text-gray-600 uppercase tracking-wide mb-4">
-                Roster by Team
-              </div>
+          <section className="rounded-[2rem] border border-white/80 bg-white/82 p-6 shadow-[0_24px_70px_rgba(12,83,121,0.12)] backdrop-blur">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-2xl font-black text-[#16322a]">Active Caseload</h2>
+              <Link href="/players" className="text-sm font-bold text-[#0b6fd6] underline">
+                View all
+              </Link>
+            </div>
 
-              {teams.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <p className="text-lg">Create a team first.</p>
-                  <p className="text-sm mt-2">
-                    Players can’t register until they have a team invite code.
-                  </p>
+            <div className="space-y-3">
+              {caseload.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[#cde6b4] bg-[#fcfff6] p-6 text-[#55776a]">
+                  No clients assigned yet.
                 </div>
               ) : (
-                <div className="space-y-6">
-                  {rosterGrouped.ordered.map((g) => (
-                    <div key={g.team_id} className="space-y-2">
-                      <div className="flex items-center justify-between px-2 py-1">
-                        <div className="text-base font-semibold text-gray-900">{g.team_name}</div>
-                        <div className="text-xs text-gray-600">
-                          {g.players.length} player{g.players.length === 1 ? "" : "s"}
-                        </div>
-                      </div>
-
-                      {g.players.length === 0 ? (
-                        <div className="text-sm text-gray-500 px-2 py-2">
-                          No players yet. Share this team's invite code.
-                        </div>
-                      ) : (
-                        <div className="space-y-1">
-                          {g.players.map((p) => (
-                            <div
-                              key={p.user_id}
-                              className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 transition-all flex items-center justify-between gap-4"
-                            >
-                              <div className="flex-1 min-w-0">
-                                <div className="font-semibold text-gray-900">{p.name ?? "Unnamed"}</div>
-                                <div className="text-xs text-gray-600 mt-0.5">
-                                  Grad Year: <span className="font-medium">{p.grad_year ?? "—"}</span>
-                                </div>
-                              </div>
-
-                              <div className="relative" ref={openMenuPlayerId === p.user_id ? playerMenuRef : null}>
-                                <button
-                                  onClick={() => setOpenMenuPlayerId(openMenuPlayerId === p.user_id ? null : p.user_id)}
-                                  className="p-2 hover:bg-gray-200 rounded-lg transition-all"
-                                  aria-label="Player options"
-                                >
-                                  <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 16 16">
-                                    <circle cx="8" cy="2" r="1.5"/>
-                                    <circle cx="8" cy="8" r="1.5"/>
-                                    <circle cx="8" cy="14" r="1.5"/>
-                                  </svg>
-                                </button>
-
-                                {openMenuPlayerId === p.user_id && (
-                                  <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-                                    <Link
-                                      href={`/players/${p.user_id}/edit`}
-                                      onClick={() => setOpenMenuPlayerId(null)}
-                                      className="block w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-all text-sm font-medium text-gray-700 border-b border-gray-100"
-                                    >
-                                      Edit Player
-                                    </Link>
-                                    <button
-                                      onClick={() => {
-                                        removePlayer(p.user_id);
-                                        setOpenMenuPlayerId(null);
-                                      }}
-                                      className="w-full text-left px-4 py-2.5 hover:bg-red-50 transition-all text-sm font-medium text-red-600 rounded-b-lg"
-                                    >
-                                      Remove
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                caseload.slice(0, 8).map((row) => (
+                  <Link
+                    key={row.assignment_id}
+                    href={`/players/${row.client_user_id}/interactions`}
+                    className="block rounded-2xl border border-[#d6eefc] bg-white/90 p-4 transition-all hover:-translate-y-0.5 hover:shadow-md"
+                  >
+                    <div className="font-bold text-[#16322a]">{row.client_name ?? "Unnamed client"}</div>
+                    <div className="mt-1 text-sm text-[#55776a]">
+                      {row.organization_name ?? "Unknown organization"} • {row.status ?? "unknown"}
                     </div>
-                  ))}
-
-                  {rosterGrouped.unassigned.length > 0 && (
-                    <div className="space-y-2 mt-6">
-                      <div className="flex items-center justify-between px-2 py-1">
-                        <div className="text-base font-semibold text-yellow-800">Unassigned</div>
-                        <div className="text-xs text-yellow-700">
-                          {rosterGrouped.unassigned.length} player{rosterGrouped.unassigned.length === 1 ? "" : "s"}
-                        </div>
-                      </div>
-                      <div className="text-xs text-yellow-700 px-2">
-                        These players have no team assigned.
-                      </div>
-
-                      <div className="space-y-1">
-                        {rosterGrouped.unassigned.map((p) => (
-                          <div
-                            key={p.user_id}
-                            className="border border-yellow-200 bg-yellow-50 rounded-lg p-3 hover:bg-yellow-100 transition-all flex items-center justify-between gap-4"
-                          >
-                            <div className="flex-1 min-w-0">
-                              <div className="font-semibold text-gray-900">{p.name ?? "Unnamed"}</div>
-                              <div className="text-xs text-gray-600 mt-0.5">
-                                Grad Year: <span className="font-medium">{p.grad_year ?? "—"}</span>
-                              </div>
-                            </div>
-
-                            <div className="relative" ref={openMenuPlayerId === p.user_id ? playerMenuRef : null}>
-                              <button
-                                onClick={() => setOpenMenuPlayerId(openMenuPlayerId === p.user_id ? null : p.user_id)}
-                                className="p-2 hover:bg-yellow-200 rounded-lg transition-all"
-                                aria-label="Player options"
-                              >
-                                <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 16 16">
-                                  <circle cx="8" cy="2" r="1.5"/>
-                                  <circle cx="8" cy="8" r="1.5"/>
-                                  <circle cx="8" cy="14" r="1.5"/>
-                                </svg>
-                              </button>
-
-                              {openMenuPlayerId === p.user_id && (
-                                <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-                                  <Link
-                                    href={`/players/${p.user_id}/edit`}
-                                    onClick={() => setOpenMenuPlayerId(null)}
-                                    className="block w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-all text-sm font-medium text-gray-700 border-b border-gray-100"
-                                  >
-                                    Edit Player
-                                  </Link>
-                                  <button
-                                    onClick={() => {
-                                      removePlayer(p.user_id);
-                                      setOpenMenuPlayerId(null);
-                                    }}
-                                    className="w-full text-left px-4 py-2.5 hover:bg-red-50 transition-all text-sm font-medium text-red-600 rounded-b-lg"
-                                  >
-                                    Remove
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  </Link>
+                ))
               )}
             </div>
-          </>
-        )}
+          </section>
+        </div>
       </div>
     </main>
   );

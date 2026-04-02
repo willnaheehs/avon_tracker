@@ -26,7 +26,7 @@ import Nav from "@/components/Nav";
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthGate>
-      <div className="flex flex-col h-screen">
+      <div className="flex h-screen flex-col bg-[radial-gradient(circle_at_top_left,_rgba(14,145,255,0.24),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(105,201,49,0.18),_transparent_24%),linear-gradient(150deg,_#eef9ff_0%,_#e8f9f0_52%,_#fefbea_100%)]">
         <AppHeader />
         <div className="flex flex-1 overflow-hidden">
           <Nav />
