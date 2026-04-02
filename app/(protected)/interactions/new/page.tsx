@@ -87,7 +87,7 @@ export default function NewInteractionPage() {
 
     const trimmedBody = body.trim();
     if (!trimmedBody) {
-      setErr("Please enter a note.");
+      setErr("Please enter a note");
       return;
     }
 
